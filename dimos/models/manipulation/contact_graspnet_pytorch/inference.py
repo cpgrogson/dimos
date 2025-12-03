@@ -1,28 +1,16 @@
 import glob
 import os
 import argparse
-import sys
-
-# Simple fix: add parent directory to path to make imports work when running directly
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import torch
 import numpy as np
+from contact_graspnet_pytorch.contact_grasp_estimator import GraspEstimator
+from contact_graspnet_pytorch import config_utils
 
-# Simple conditional import
-try:
-    from contact_graspnet_pytorch.contact_grasp_estimator import GraspEstimator
-    from contact_graspnet_pytorch import config_utils
-    from contact_graspnet_pytorch.visualization_utils_o3d import visualize_grasps, show_image
-    from contact_graspnet_pytorch.checkpoints import CheckpointIO
-    from data import load_available_input_data
-except ImportError:
-    # When running as script directly
-    from contact_grasp_estimator import GraspEstimator
-    import config_utils
-    from visualization_utils_o3d import visualize_grasps, show_image
-    from checkpoints import CheckpointIO
-    from data import load_available_input_data
+from contact_graspnet_pytorch.visualization_utils_o3d import visualize_grasps, show_image
+from contact_graspnet_pytorch.checkpoints import CheckpointIO 
+from contact_graspnet_pytorch.data import load_available_input_data
+from dimos.utils.testing import testData
 
 def inference(global_config, 
               ckpt_dir,
@@ -51,7 +39,7 @@ def inference(global_config,
     grasp_estimator = GraspEstimator(global_config)
 
     # Load the weights
-    model_checkpoint_dir = os.path.join(ckpt_dir, 'checkpoints')
+    model_checkpoint_dir = testData(ckpt_dir)
     checkpoint_io = CheckpointIO(checkpoint_dir=model_checkpoint_dir, model=grasp_estimator.model)
     try:
         load_dict = checkpoint_io.load('model.pt')
@@ -92,8 +80,8 @@ def inference(global_config,
                   pc_full=pc_full, pred_grasps_cam=pred_grasps_cam, scores=scores, contact_pts=contact_pts, pc_colors=pc_colors)
 
         # Visualize results          
-        show_image(rgb, segmap)
-        visualize_grasps(pc_full, pred_grasps_cam, scores, plot_opencv_cam=True, pc_colors=pc_colors)
+        # show_image(rgb, segmap)
+        # visualize_grasps(pc_full, pred_grasps_cam, scores, plot_opencv_cam=True, pc_colors=pc_colors)
         
     if not glob.glob(input_paths):
         print('No files found: ', input_paths)
@@ -101,7 +89,7 @@ def inference(global_config,
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ckpt_dir', default='checkpoints/contact_graspnet', help='Log dir')
+    parser.add_argument('--ckpt_dir', default='models_contact_graspnet', help='Log dir')
     parser.add_argument('--np_path', default='test_data/7.npy', help='Input data: npz/npy file with keys either "depth" & camera matrix "K" or just point cloud "pc" in meters. Optionally, a 2D "segmap"')
     parser.add_argument('--K', default=None, help='Flat Camera Matrix, pass as "[fx, 0, cx, 0, fy, cy, 0, 0 ,1]"')
     parser.add_argument('--z_range', default=[0.2,1.8], help='Z value threshold to crop the input point cloud')
