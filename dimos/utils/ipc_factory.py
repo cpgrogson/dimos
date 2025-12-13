@@ -23,9 +23,11 @@ import numpy as np
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.managers import SharedMemoryManager
 
+
 def _sanitize_shm_name(name: str) -> str:
     #  Python's SharedMemory expects names like 'psm_abc', without leading '/'
     return name.lstrip("/") if isinstance(name, str) else name
+
 
 def _ensure_cuda_context(cp, dev: int) -> None:
     """Create/init runtime+primary context on this thread for device `dev`."""
@@ -217,10 +219,10 @@ class CpuShmChannel(FrameChannel):
             obj._shm_ctrl = SharedMemory(name=ctrl_name)
         except FileNotFoundError as e:
             raise FileNotFoundError(
-                    f"CPU IPC attach failed: control/data SHM not found "
-                    f"(ctrl='{ctrl_name}', data='{data_name}'). "
-                    f"Ensure the writer is running on the same host and the channel is alive."
-                ) from e
+                f"CPU IPC attach failed: control/data SHM not found "
+                f"(ctrl='{ctrl_name}', data='{data_name}'). "
+                f"Ensure the writer is running on the same host and the channel is alive."
+            ) from e
         obj._ctrl = np.ndarray((3,), dtype=np.int64, buffer=obj._shm_ctrl.buf)
         # attachments don’t own/unlink
         obj._finalizer_data = obj._finalizer_ctrl = None
@@ -370,9 +372,9 @@ class CudaIpcChannel(FrameChannel):
             obj._shm_ctrl = SharedMemory(name=ctrl_name)
         except FileNotFoundError as e:
             raise FileNotFoundError(
-                    f"CUDA IPC attach failed: control SHM not found (ctrl='{ctrl_name}'). "
-                    f"Ensure reader is on the same host as the writer and the channel is alive."
-                ) from e
+                f"CUDA IPC attach failed: control SHM not found (ctrl='{ctrl_name}'). "
+                f"Ensure reader is on the same host as the writer and the channel is alive."
+            ) from e
         obj._ctrl = np.ndarray((3,), dtype=np.int64, buffer=obj._shm_ctrl.buf)
         obj._finalizer_ctrl = None
 
