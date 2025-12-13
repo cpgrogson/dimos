@@ -104,7 +104,9 @@ class UnitreeCameraModule(Module):
         # Threading
         self._processing_thread: Optional[threading.Thread] = None
         self._stop_processing = threading.Event()
-        self._multirateprocessor = MultiRateProcessor(target_fps_by_model={"depth": (15, self._process_depth)})
+        self._multirateprocessor = MultiRateProcessor(
+            target_fps_by_model={"depth": (15, self._process_depth)}
+        )
 
         logger.info(f"UnitreeCameraModule initialized with intrinsics: {camera_intrinsics}")
 
@@ -172,10 +174,10 @@ class UnitreeCameraModule(Module):
                     self._latest_frame = None  # Clear to avoid reprocessing
                     self._multirateprocessor.on_frame(msg)
                     # Store for publishing
-                    #self._last_image = msg.data
-                    #self._last_timestamp = msg.ts if msg.ts else time.time()
+                    # self._last_image = msg.data
+                    # self._last_timestamp = msg.ts if msg.ts else time.time()
                     # Process depth
-                    #self._process_depth(self._last_image)
+                    # self._process_depth(self._last_image)
 
                 except Exception as e:
                     logger.error(f"Error in main processing loop: {e}", exc_info=True)

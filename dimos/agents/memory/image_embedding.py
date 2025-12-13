@@ -74,47 +74,44 @@ class ImageEmbeddingProvider:
 
                 tensorrt_opts = {
                     "device_id": 0,
-
                     # Memory/tactics
-                    "trt_max_workspace_size": 600 * 1024**2,        # 512MB
-                    "trt_builder_optimization_level": 5,            # 0..5, higher = more aggressive build/tactics
-                    "trt_auxiliary_streams": 0,                     # small benefit on some nets; keep modest on Nano
-
+                    "trt_max_workspace_size": 600 * 1024**2,  # 512MB
+                    "trt_builder_optimization_level": 5,  # 0..5, higher = more aggressive build/tactics
+                    "trt_auxiliary_streams": 0,  # small benefit on some nets; keep modest on Nano
                     # Precision
-                    "trt_fp16_enable": True,                        # Nano lacks tensor cores but can still benefit from FP16 in some ops
-                    "trt_int8_enable": False,                       # set True only if you have a Q/DQ model or a proper calibration table
-
+                    "trt_fp16_enable": True,  # Nano lacks tensor cores but can still benefit from FP16 in some ops
+                    "trt_int8_enable": False,  # set True only if you have a Q/DQ model or a proper calibration table
                     # Partitioning / conversion heuristics
                     "trt_max_partition_iterations": 1000,
                     "trt_min_subgraph_size": 1,
                     "trt_build_heuristics_enable": True,
-
                     # Keep LayerNorm stable if needed (accuracy safeguard, can be False for speed)
                     "trt_layer_norm_fp32_fallback": True,
-
                     # Context memory sharing to lower RAM requirements
                     "trt_context_memory_sharing_enable": False,
                     # CUDA graph inside TRT to lower launch overhead
                     "trt_cuda_graph_enable": False,
-
                     # Engine cache (skip rebuilds) + timing cache (faster rebuilds)
                     "trt_engine_cache_enable": True,
                     "trt_engine_cache_path": "./trt_engines",
                     "trt_timing_cache_enable": True,
                     "trt_timing_cache_path": "./trt_timing",
-
                 }
 
                 cuda_opts = {
-                    'cudnn_conv_use_max_workspace': '0',
-                    'device_id': 0,
-                    'arena_extend_strategy': 'kNextPowerOfTwo',
-                    'cudnn_conv_algo_search': 'EXHAUSTIVE',
-                    'do_copy_in_default_stream': True,
+                    "cudnn_conv_use_max_workspace": "0",
+                    "device_id": 0,
+                    "arena_extend_strategy": "kNextPowerOfTwo",
+                    "cudnn_conv_algo_search": "EXHAUSTIVE",
+                    "do_copy_in_default_stream": True,
                 }
 
-                providers = [('TensorrtExecutionProvider', tensorrt_opts), ("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
-                #providers = [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
+                providers = [
+                    ("TensorrtExecutionProvider", tensorrt_opts),
+                    ("CUDAExecutionProvider", cuda_opts),
+                    "CPUExecutionProvider",
+                ]
+                # providers = [("CUDAExecutionProvider", cuda_opts), "CPUExecutionProvider"]
 
                 self.model = ort.InferenceSession(str(model_id), providers=providers)
 

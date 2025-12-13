@@ -1,3 +1,17 @@
+# Copyright 2025 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # multirate.py
 import time, threading, logging
 from typing import Callable, Dict, Optional, Tuple
@@ -9,15 +23,17 @@ logger = logging.getLogger(__name__)
 #   meta = {"seq": int, "ts_ns": int, "device": "cpu"|"cuda"}
 Handler = Callable[[object, dict], None]
 
+
 class MultiRateProcessor:
     """
     Per-model FPS workers that read the freshest frame from a FrameChannel.
     - Works with CPU or CUDA backends via the channel interface.
     - You supply a handler per model name.
     """
+
     def __init__(
         self,
-        channel,                         # FrameChannel
+        channel,  # FrameChannel
         target_fps_by_model: Dict[str, float],
         handlers: Dict[str, Handler],
         max_age_s: Optional[float] = None,  # drop stale frames if set

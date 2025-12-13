@@ -1,3 +1,17 @@
+# Copyright 2025 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # frame_ipc.py
 # Python 3.9+
 import base64
@@ -9,20 +23,22 @@ import numpy as np
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.managers import SharedMemoryManager
 
+
 def _ensure_cuda_context(cp, dev: int) -> None:
     """Create/init runtime+primary context on this thread for device `dev`."""
-    cp.cuda.Device(dev).use()          # makes primary context current (creates if needed)
+    cp.cuda.Device(dev).use()  # makes primary context current (creates if needed)
     try:
-        cp.cuda.runtime.setDevice(dev) # initialize runtime API binding
+        cp.cuda.runtime.setDevice(dev)  # initialize runtime API binding
     except Exception:
         pass
-    _ = cp.empty((1,), dtype=cp.uint8) # force lazy init paths
+    _ = cp.empty((1,), dtype=cp.uint8)  # force lazy init paths
     try:
         cp.cuda.runtime.deviceSynchronize()
     except Exception:
         pass
 
-def _get_pci_triple(cp, dev: int) -> tuple[int,int,int]:
+
+def _get_pci_triple(cp, dev: int) -> tuple[int, int, int]:
     """(domain, bus, device) from cudaDeviceProp; falls back to (-1,-1,-1)."""
     props = cp.cuda.runtime.getDeviceProperties(dev)
     dom = int(props.get("pciDomainID", 0))
@@ -30,14 +46,17 @@ def _get_pci_triple(cp, dev: int) -> tuple[int,int,int]:
     devn = int(props.get("pciDeviceID", -1))
     return (dom, bus, devn)
 
-def _map_pci_to_local_device(cp, target_pci: tuple[int,int,int]) -> int | None:
+
+def _map_pci_to_local_device(cp, target_pci: tuple[int, int, int]) -> int | None:
     """Find local ordinal whose PCI triple matches target_pci."""
     n = cp.cuda.runtime.getDeviceCount()
     for d in range(n):
         props = cp.cuda.runtime.getDeviceProperties(d)
-        if (int(props.get("pciDomainID", 0)),
+        if (
+            int(props.get("pciDomainID", 0)),
             int(props.get("pciBusID", -1)),
-            int(props.get("pciDeviceID", -1))) == target_pci:
+            int(props.get("pciDeviceID", -1)),
+        ) == target_pci:
             return d
     return None
 
@@ -45,6 +64,7 @@ def _map_pci_to_local_device(cp, target_pci: tuple[int,int,int]) -> int | None:
 # ---------------------------
 # 1) Abstract interface
 # ---------------------------
+
 
 class FrameChannel(ABC):
     """Single-slot 'freshest frame' IPC channel with a tiny control block.
@@ -59,13 +79,11 @@ class FrameChannel(ABC):
 
     @property
     @abstractmethod
-    def shape(self) -> tuple:
-        ...
+    def shape(self) -> tuple: ...
 
     @property
     @abstractmethod
-    def dtype(self) -> np.dtype:
-        ...
+    def dtype(self) -> np.dtype: ...
 
     @abstractmethod
     def publish(self, frame) -> None:
@@ -93,8 +111,10 @@ class FrameChannel(ABC):
         """Detach resources (owner also unlinks manager if applicable)."""
         ...
 
+
 from multiprocessing.shared_memory import SharedMemory
 import weakref, os
+
 
 def _safe_unlink(name):
     try:
@@ -105,9 +125,11 @@ def _safe_unlink(name):
     except Exception:
         pass
 
+
 # ---------------------------
 # 2) CPU shared-memory backend
 # ---------------------------
+
 
 class CpuShmChannel(FrameChannel):
     def __init__(self, shape, dtype=np.uint8):
@@ -126,18 +148,28 @@ class CpuShmChannel(FrameChannel):
         self._finalizer_ctrl = weakref.finalize(self, _safe_unlink, self._shm_ctrl.name)
 
     @property
-    def device(self): return "cpu"
+    def device(self):
+        return "cpu"
+
     @property
-    def shape(self): return self._shape
+    def shape(self):
+        return self._shape
+
     @property
-    def dtype(self): return self._dtype
+    def dtype(self):
+        return self._dtype
 
     def publish(self, frame):
         assert isinstance(frame, np.ndarray)
         assert frame.shape == self._shape and frame.dtype == self._dtype
-        active = int(self._ctrl[2]); inactive = 1 - active
-        view = np.ndarray(self._shape, dtype=self._dtype,
-                          buffer=self._shm_data.buf, offset=inactive * self._nbytes)
+        active = int(self._ctrl[2])
+        inactive = 1 - active
+        view = np.ndarray(
+            self._shape,
+            dtype=self._dtype,
+            buffer=self._shm_data.buf,
+            offset=inactive * self._nbytes,
+        )
         np.copyto(view, frame, casting="no")
         self._ctrl[1] = np.int64(time.time_ns())
         self._ctrl[0] += 1
@@ -145,9 +177,12 @@ class CpuShmChannel(FrameChannel):
 
     def read(self, last_seq: int = -1, require_new=True):
         for _ in range(3):
-            seq1 = int(self._ctrl[0]); idx = int(self._ctrl[2]); ts = int(self._ctrl[1])
-            view = np.ndarray(self._shape, dtype=self._dtype,
-                              buffer=self._shm_data.buf, offset=idx * self._nbytes)
+            seq1 = int(self._ctrl[0])
+            idx = int(self._ctrl[2])
+            ts = int(self._ctrl[1])
+            view = np.ndarray(
+                self._shape, dtype=self._dtype, buffer=self._shm_data.buf, offset=idx * self._nbytes
+            )
             if seq1 == int(self._ctrl[0]):
                 if require_new and seq1 == last_seq:
                     return seq1, ts, None
@@ -193,15 +228,24 @@ class CpuShmChannel(FrameChannel):
 # 3) CUDA IPC backend (CuPy)
 # ---------------------------
 
-def _b64(b: bytes) -> str: return base64.b64encode(b).decode("ascii")
-def _unb64(s: str) -> bytes: return base64.b64decode(s.encode("ascii"))
+
+def _b64(b: bytes) -> str:
+    return base64.b64encode(b).decode("ascii")
+
+
+def _unb64(s: str) -> bytes:
+    return base64.b64decode(s.encode("ascii"))
+
+
 # --- REPLACEMENT: CudaIpcChannel (no SharedMemoryManager, owner-only weakref unlink) ---
 class CudaIpcChannel(FrameChannel):
     """CUDA IPC via CuPy. Two device buffers + CPU ctrl shm. No child procs."""
 
-    def __init__(self, shape, dtype=np.uint8, device: int = 0,
-                 manager: SharedMemoryManager | None = None):
+    def __init__(
+        self, shape, dtype=np.uint8, device: int = 0, manager: SharedMemoryManager | None = None
+    ):
         import cupy as cp
+
         self._cp = cp
         self._shape = tuple(shape)
         self._dtype = np.dtype(dtype)
@@ -214,8 +258,8 @@ class CudaIpcChannel(FrameChannel):
         self._finalizer_ctrl = weakref.finalize(self, _safe_unlink, self._shm_ctrl.name)
 
         self._is_owner = True
-        self._handles = None      # lazy export
-        self._ipc_ptrs = []       # used on attach only
+        self._handles = None  # lazy export
+        self._ipc_ptrs = []  # used on attach only
 
         # Allocate two device buffers
         _ensure_cuda_context(self._cp, self._device)
@@ -228,16 +272,22 @@ class CudaIpcChannel(FrameChannel):
             self._h2d_stream = self._cp.cuda.Stream(non_blocking=True)
 
     @property
-    def device(self) -> str: return "cuda"
+    def device(self) -> str:
+        return "cuda"
+
     @property
-    def shape(self) -> tuple: return self._shape
+    def shape(self) -> tuple:
+        return self._shape
+
     @property
-    def dtype(self) -> np.dtype: return self._dtype
+    def dtype(self) -> np.dtype:
+        return self._dtype
 
     def publish(self, frame) -> None:
         cp = self._cp
         with cp.cuda.Device(self._device), self._h2d_stream:
-            active = int(self._ctrl[2]); inactive = 1 - active
+            active = int(self._ctrl[2])
+            inactive = 1 - active
             dst = self._bufs[inactive]
             if isinstance(frame, cp.ndarray):
                 cp.copyto(dst, frame, casting="no")
@@ -249,7 +299,9 @@ class CudaIpcChannel(FrameChannel):
         self._ctrl[2] = inactive
 
     def read(self, last_seq: int = -1, require_new: bool = True):
-        seq1 = int(self._ctrl[0]); idx = int(self._ctrl[2]); ts = int(self._ctrl[1])
+        seq1 = int(self._ctrl[0])
+        idx = int(self._ctrl[2])
+        ts = int(self._ctrl[1])
         view = self._bufs[idx]
         if seq1 == int(self._ctrl[0]):
             if require_new and seq1 == last_seq:
@@ -269,8 +321,8 @@ class CudaIpcChannel(FrameChannel):
             "kind": "cuda",
             "shape": self._shape,
             "dtype": self._dtype.str,
-            "device": self._device,      # informational; attach will prefer PCI
-            "pci": pci,                  # <<< new
+            "device": self._device,  # informational; attach will prefer PCI
+            "pci": pci,  # <<< new
             "nbytes": self._nbytes,
             "ctrl_name": self._shm_ctrl.name,
             "ptr0": int(self._bufs[0].data.ptr),
@@ -282,6 +334,7 @@ class CudaIpcChannel(FrameChannel):
     @classmethod
     def attach(cls, desc: dict) -> "CudaIpcChannel":
         import cupy as cp
+
         obj = object.__new__(cls)
         obj._cp = cp
         obj._shape = tuple(desc["shape"])
@@ -313,12 +366,16 @@ class CudaIpcChannel(FrameChannel):
                 return False
 
         # Prefer RAW POINTER path if present and accessible in this context
-        use_ptrs = ("ptr0" in desc and "ptr1" in desc and
-                    _ptr_accessible(int(desc["ptr0"])) and
-                    _ptr_accessible(int(desc["ptr1"])))
+        use_ptrs = (
+            "ptr0" in desc
+            and "ptr1" in desc
+            and _ptr_accessible(int(desc["ptr0"]))
+            and _ptr_accessible(int(desc["ptr1"]))
+        )
 
         if use_ptrs:
-            p0_i = int(desc["ptr0"]); p1_i = int(desc["ptr1"])
+            p0_i = int(desc["ptr0"])
+            p1_i = int(desc["ptr1"])
             # No ipcCloseMemHandle needed for raw-ptr mode
             obj._ipc_ptrs = []
             mem0 = cp.cuda.UnownedMemory(p0_i, obj._nbytes, owner=obj)
@@ -339,7 +396,6 @@ class CudaIpcChannel(FrameChannel):
         ]
         return obj
 
-
     def close(self) -> None:
         try:
             self._shm_ctrl.close()
@@ -347,21 +403,27 @@ class CudaIpcChannel(FrameChannel):
             pass
         if self._is_owner:
             if self._finalizer_ctrl:
-                try: _safe_unlink(self._shm_ctrl.name)
-                finally: self._finalizer_ctrl.detach()
+                try:
+                    _safe_unlink(self._shm_ctrl.name)
+                finally:
+                    self._finalizer_ctrl.detach()
         else:
             cp = self._cp
             for ptr in getattr(self, "_ipc_ptrs", []):
-                try: cp.cuda.runtime.ipcCloseMemHandle(ptr)
-                except Exception: pass
+                try:
+                    cp.cuda.runtime.ipcCloseMemHandle(ptr)
+                except Exception:
+                    pass
 
 
 # ---------------------------
 # 4) Factories
 # ---------------------------
 
+
 class CPU_IPC_Factory:
     """Creates/attaches CPU shared-memory channels."""
+
     @staticmethod
     def create(shape, dtype=np.uint8) -> CpuShmChannel:
         return CpuShmChannel(shape, dtype=dtype)
@@ -374,10 +436,12 @@ class CPU_IPC_Factory:
 
 class CUDA_IPC_Factory:
     """Creates/attaches CUDA IPC channels (CuPy)."""
+
     @staticmethod
     def is_available(device: int = 0) -> bool:
         try:
             import cupy as cp
+
             with cp.cuda.Device(device):
                 _ = cp.cuda.runtime.getDevice()  # probe
             return True
@@ -398,7 +462,10 @@ class CUDA_IPC_Factory:
 # 5) Runtime selector
 # ---------------------------
 
-def make_frame_channel(shape, dtype=np.uint8, prefer: str = "auto", device: int = 0) -> FrameChannel:
+
+def make_frame_channel(
+    shape, dtype=np.uint8, prefer: str = "auto", device: int = 0
+) -> FrameChannel:
     """Choose CUDA IPC if available (or requested), otherwise CPU SHM."""
     if prefer in ("cuda", "auto"):
         if CUDA_IPC_Factory.is_available(device):
