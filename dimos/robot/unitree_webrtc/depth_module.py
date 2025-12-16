@@ -26,6 +26,7 @@ from dimos.msgs.sensor_msgs import Image, ImageFormat
 from dimos_lcm.sensor_msgs import CameraInfo
 from dimos.utils.logging_config import setup_logger
 from dimos.stream.rust_transport_shim import should_use_rust_transport
+
 try:
     from dimos.stream.rust_transport_shim import RustLCMTransport
 except Exception:

@@ -40,6 +40,7 @@ from dimos.perception.common.utils import (
 )
 from dimos.protocol import pubsub
 from dimos.stream.rust_transport_shim import should_use_rust_transport
+
 try:
     from dimos.stream.rust_transport_shim import RustLCMTransport
 except Exception:
@@ -435,19 +436,13 @@ class UnitreeGo2(Robot):
         self.navigator.goal_request.transport = TX("/goal_request", PoseStamped)
         self.navigator.goal_reached.transport = TX("/goal_reached", Bool)
         self.navigator.navigation_state.transport = TX("/navigation_state", String)
-        self.navigator.global_costmap.transport = TX(
-            "/global_costmap", OccupancyGrid
-        )
+        self.navigator.global_costmap.transport = TX("/global_costmap", OccupancyGrid)
         self.global_planner.path.transport = TX("/global_path", Path)
         self.local_planner.cmd_vel.transport = TX("/cmd_vel", Twist)
-        self.frontier_explorer.goal_request.transport = TX(
-            "/goal_request", PoseStamped
-        )
+        self.frontier_explorer.goal_request.transport = TX("/goal_request", PoseStamped)
         self.frontier_explorer.goal_reached.transport = TX("/goal_reached", Bool)
         self.frontier_explorer.explore_cmd.transport = TX("/explore_cmd", Bool)
-        self.frontier_explorer.stop_explore_cmd.transport = TX(
-            "/stop_explore_cmd", Bool
-        )
+        self.frontier_explorer.stop_explore_cmd.transport = TX("/stop_explore_cmd", Bool)
 
         self.global_planner.target.connect(self.navigator.goal)
 
@@ -496,9 +491,7 @@ class UnitreeGo2(Robot):
         TX = RustLCMTransport if use_rust else core.LCMTransport
 
         self.spatial_memory_module.video.transport = TX("/go2/color_image", Image)
-        self.spatial_memory_module.odom.transport = TX(
-            "/go2/camera_pose", PoseStamped
-        )
+        self.spatial_memory_module.odom.transport = TX("/go2/camera_pose", PoseStamped)
 
         logger.info("Spatial memory module deployed and connected")
 
@@ -511,15 +504,9 @@ class UnitreeGo2(Robot):
         # Set up transports
         use_rust = should_use_rust_transport() and RustLCMTransport is not None
         TX = RustLCMTransport if use_rust else core.LCMTransport
-        self.object_tracker.detection2darray.transport = TX(
-            "/go2/detection2d", Detection2DArray
-        )
-        self.object_tracker.detection3darray.transport = TX(
-            "/go2/detection3d", Detection3DArray
-        )
-        self.object_tracker.tracked_overlay.transport = TX(
-            "/go2/tracked_overlay", Image
-        )
+        self.object_tracker.detection2darray.transport = TX("/go2/detection2d", Detection2DArray)
+        self.object_tracker.detection3darray.transport = TX("/go2/detection3d", Detection3DArray)
+        self.object_tracker.tracked_overlay.transport = TX("/go2/tracked_overlay", Image)
 
         logger.info("Object tracker module deployed")
 
