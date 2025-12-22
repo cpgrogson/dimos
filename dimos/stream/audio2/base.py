@@ -448,6 +448,8 @@ class GStreamerSinkBase(GStreamerPipelineBase, ABC):
         # Send EOS to pipeline
         if self._appsrc:
             self._appsrc.emit("end-of-stream")
+        # Note: We don't automatically stop here - the caller should call stop()
+        # when they're ready to clean up
 
     def start(self):
         """Start the audio sink pipeline."""
@@ -483,6 +485,8 @@ class GStreamerSinkBase(GStreamerPipelineBase, ABC):
         # Stop pipeline
         if self._pipeline:
             self._pipeline.set_state(Gst.State.NULL)
+            # Wait for state change to complete
+            self._pipeline.get_state(Gst.CLOCK_TIME_NONE)
 
         # Clean up
         self._cleanup_pipeline()

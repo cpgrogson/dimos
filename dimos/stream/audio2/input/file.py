@@ -36,6 +36,9 @@ class FileInputConfig(GStreamerNodeConfig):
 
     file_path: str = Field(description="Path to audio file")
     loop: bool = Field(default=False, description="Whether to loop the file")
+    realtime: bool = Field(
+        default=True, description="Emit audio at real-time speed instead of as fast as possible"
+    )
 
     @validator("file_path")
     def validate_file_exists(cls, v):
@@ -60,6 +63,22 @@ class FileInputNode(GStreamerSourceBase):
         """Get a descriptive name including the file."""
         return f"FileInput[{Path(self.config.file_path).name}]"
 
+    def _configure_appsink(self):
+        """Configure appsink with realtime option."""
+        self._appsink.set_property("emit-signals", True)
+        self._appsink.set_property("sync", self.config.realtime)  # Sync to clock if realtime
+
+        # Apply any custom properties
+        if hasattr(self.config, "properties") and self.config.properties:
+            for prop, value in self.config.properties.items():
+                if prop in ["emit-signals", "sync"]:  # Skip already set properties
+                    continue
+                try:
+                    self._appsink.set_property(prop, value)
+                    logger.debug(f"Set appsink property {prop}={value}")
+                except Exception as e:
+                    logger.warning(f"Failed to set appsink property {prop}: {e}")
+
     def _handle_eos(self):
         """Handle end of stream with looping support."""
         if self.config.loop:
@@ -80,7 +99,8 @@ def file_input(file_path: str, **kwargs) -> AudioSource:
         file_path: Path to audio file
         **kwargs: Additional arguments passed to FileInputConfig:
             - loop: Whether to loop the file (default: False)
-            - output: Output audio specification (default: OPUS compressed)
+            - realtime: Emit at real-time speed (default: True)
+            - output: Output audio specification (default: Vorbis compressed)
             - properties: GStreamer element properties
 
     Returns:

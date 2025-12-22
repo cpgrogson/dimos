@@ -62,6 +62,9 @@ class TestSignalConfig(GStreamerNodeConfig):
     duration: Optional[float] = Field(
         default=None, gt=0, description="Optional duration in seconds (None = infinite)"
     )
+    realtime: bool = Field(
+        default=True, description="Emit audio at real-time speed instead of as fast as possible"
+    )
 
 
 class TestSignalNode(GStreamerSourceBase):
@@ -130,6 +133,22 @@ class TestSignalNode(GStreamerSourceBase):
         }
 
         return wave_map.get(waveform, "0")  # Default to sine
+
+    def _configure_appsink(self):
+        """Configure appsink with realtime option."""
+        self._appsink.set_property("emit-signals", True)
+        self._appsink.set_property("sync", self.config.realtime)  # Sync to clock if realtime
+
+        # Apply any custom properties
+        if hasattr(self.config, "properties") and self.config.properties:
+            for prop, value in self.config.properties.items():
+                if prop in ["emit-signals", "sync"]:  # Skip already set properties
+                    continue
+                try:
+                    self._appsink.set_property(prop, value)
+                    logger.debug(f"Set appsink property {prop}={value}")
+                except Exception as e:
+                    logger.warning(f"Failed to set appsink property {prop}: {e}")
 
     def _get_source_name(self) -> str:
         """Get descriptive name for this source."""

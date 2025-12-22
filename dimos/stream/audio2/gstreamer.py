@@ -94,6 +94,13 @@ def release_mainloop():
                 # Last user - stop the mainloop
                 logger.info("Stopping GStreamer MainLoop (last reference)")
                 _mainloop.quit()
+
+                # Wait for the thread to finish to ensure clean shutdown
+                if _mainloop_thread and _mainloop_thread.is_alive():
+                    _mainloop_thread.join(timeout=2.0)
+                    if _mainloop_thread.is_alive():
+                        logger.warning("MainLoop thread did not stop cleanly")
+
                 _mainloop = None
                 _mainloop_thread = None
         else:
