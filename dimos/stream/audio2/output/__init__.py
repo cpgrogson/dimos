@@ -14,6 +14,7 @@
 
 """Audio output modules."""
 
+from dimos.stream.audio2.output.network import network_output
 from dimos.stream.audio2.output.soundcard import speaker
 
-__all__ = ["speaker"]
+__all__ = ["network_output", "speaker"]
