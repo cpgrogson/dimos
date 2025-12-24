@@ -596,8 +596,7 @@ class UnitreeGo2(UnitreeRobot, Resource):
         )
 
         # Deploy ReID module for person identification
-        # Only compute embeddings every 10 frames (0.5Hz at 5Hz detection rate) to reduce lag
-        self.reid_module = self._dimos.deploy(ReidModule, embedding_frequency=10)
+        self.reid_module = self._dimos.deploy(ReidModule)
 
         # Deploy PersonTracker for person following
         self.person_tracker = self._dimos.deploy(

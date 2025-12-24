@@ -46,12 +46,11 @@ class ReidModule(Module):
     annotations: Out[ImageAnnotations] = None  # type: ignore
     enriched_detections: Out[Detection2DArray] = None  # type: ignore
 
-    def __init__(self, idsystem: IDSystem | None = None, embedding_frequency: int = 5, **kwargs):
+    def __init__(self, idsystem: IDSystem | None = None, **kwargs):
         """Initialize ReID module.
 
         Args:
             idsystem: ID system for tracking. Defaults to EmbeddingIDSystem with TorchReIDModel.
-            embedding_frequency: Only compute embeddings every N frames to reduce compute (default: 5)
         """
         super().__init__(**kwargs)
         if idsystem is None:
@@ -66,12 +65,9 @@ class ReidModule(Module):
                 ) from e
 
         self.idsystem = idsystem
-        self.embedding_frequency = embedding_frequency
-        self.frame_counter = 0
-        self.last_known_ids = {}  # Cache track_id -> long_term_id mapping
 
-    def detections_stream(self) -> Observable[tuple[ImageDetections2D, Detection2DArray]]:
-        """Stream aligned image detections and raw Detection2DArray."""
+    def detections_stream(self) -> Observable[ImageDetections2D]:
+        """Stream aligned image detections."""
         return backpressure(
             align_timestamped(
                 self.image.pure_observable(),
@@ -80,13 +76,7 @@ class ReidModule(Module):
                 ),
                 match_tolerance=0.0,
                 buffer_size=2.0,
-            ).pipe(
-                ops.map(
-                    lambda pair: (
-                        ImageDetections2D.from_ros_detection2d_array(*pair),  # type: ignore[misc]
-                    )
-                )
-            )
+            ).pipe(ops.map(lambda pair: ImageDetections2D.from_ros_detection2d_array(*pair)))  # type: ignore[misc]
         )
 
     @rpc
@@ -97,68 +87,37 @@ class ReidModule(Module):
     def stop(self):
         super().stop()
 
-    def ingress(self, data: tuple[ImageDetections2D, Detection2DArray]):
-        imageDetections, raw_detections = data
+    def ingress(self, imageDetections: ImageDetections2D):
         text_annotations = []
 
-        # Create a copy of the raw Detection2DArray for enrichment
-        enriched_array = Detection2DArray(
-            header=raw_detections.header,
-            detections=list(raw_detections.detections),  # Copy the detections list
-            detections_length=raw_detections.detections_length,
-        )
+        track_ids_in_frame = [det.track_id for det in imageDetections.detections]
+        if len(track_ids_in_frame) > 1:
+            self.idsystem.add_negative_constraints(track_ids_in_frame)
 
-        self.frame_counter += 1
-        compute_embeddings = (self.frame_counter % self.embedding_frequency) == 0
+        for detection in imageDetections.detections:
+            long_term_id = self.idsystem.register_detection(detection)
 
-        if compute_embeddings:
-            logger.info(f"ReID: Computing embeddings (frame {self.frame_counter})")
-        else:
-            logger.debug(f"ReID: Using cached IDs (frame {self.frame_counter})")
+            # Override track_id with ReID for downstream processing
+            if long_term_id != -1:
+                detection.track_id = long_term_id
 
-        for i, detection in enumerate(imageDetections):
-            track_id = detection.track_id
+                x1, y1, _, _ = detection.bbox
+                font_size = imageDetections.image.width / 60
 
-            # Only compute expensive embeddings every N frames
-            if compute_embeddings:
-                # Register detection and get long-term ID (expensive - runs neural network)
-                long_term_id = self.idsystem.register_detection(detection)
-                # Cache the ID for this track
-                if long_term_id != -1:
-                    self.last_known_ids[track_id] = long_term_id
-            else:
-                # Use cached ID if available (cheap lookup)
-                long_term_id = self.last_known_ids.get(track_id, -1)
+                text_annotations.append(
+                    TextAnnotation(
+                        timestamp=to_ros_stamp(detection.ts),
+                        position=Point2(x=x1, y=y1 - font_size * 1.5),
+                        text=f"PERSON: {long_term_id}",
+                        font_size=font_size,
+                        text_color=Color(r=0.0, g=1.0, b=1.0, a=1.0),  # Cyan
+                        background_color=Color(r=0.0, g=0.0, b=0.0, a=0.8),
+                    )
+                )
 
-            # Update the enriched array with ReID (even if -1)
-            if i < len(enriched_array.detections):
-                enriched_array.detections[i].id = str(long_term_id)
-
-            # Skip annotation if not ready yet (long_term_id == -1)
-            if long_term_id == -1:
-                continue
-
-            # Create text annotation for long_term_id above the detection
-            x1, y1, _, _ = detection.bbox
-            font_size = imageDetections.image.width / 60
-
-            for detection in imageDetections:
-                detection.id = self.idsystem.register_detection(detection)
-
+        if self.enriched_detections:
             self.enriched_detections.publish(imageDetections.to_ros_detection2d_array())
 
-            text_annotations.append(
-                TextAnnotation(
-                    timestamp=to_ros_stamp(detection.ts),
-                    position=Point2(x=x1, y=y1 - font_size * 1.5),
-                    text=f"PERSON: {long_term_id}",
-                    font_size=font_size,
-                    text_color=Color(r=0.0, g=1.0, b=1.0, a=1.0),  # Cyan
-                    background_color=Color(r=0.0, g=0.0, b=0.0, a=0.8),
-                )
-            )
-
-        # Publish annotations (even if empty to clear previous annotations)
         annotations = ImageAnnotations(
             texts=text_annotations,
             texts_length=len(text_annotations),
