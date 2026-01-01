@@ -6,11 +6,11 @@
 
 **TODO:** Stash will be writing the intro to DimOS
 
-The framework enables neurosymbolic orchestration of Agents as generalized spatial reasoners/planners and Robot state/action primitives as functions.
+## Key Features
 
-The result: cross-embodied *"Dimensional Applications"* exceptional at generalization and robust at symbolic action execution.
+**TODO: For dimos team to fill in**
 
-## Getting Started
+## Ready to jump in?
 
 <div class="grid cards" markdown>
 
@@ -18,31 +18,35 @@ The result: cross-embodied *"Dimensional Applications"* exceptional at generaliz
 
     ---
 
-    Get up and running with DimOS in minutes. Install dependencies, configure your environment, and run your first agent.
+    Get up and running with DimOS in minutes.
 
-    [:octicons-arrow-right-24: Get started](quickstart/index.md)
+    [:octicons-arrow-right-24: Get started](quickstart.md)
 
 - :material-school: **Tutorials**
 
     ---
 
-    [TODO: Add blurb]
+    Hands-on tutorials.
 
     [:octicons-arrow-right-24: View tutorials](tutorials/index.md)
+
+- :material-school: **Concepts**
+
+    ---
+
+    Guides to DimOS's key concepts.
+
+    [:octicons-arrow-right-24: View tutorials](concepts/index.md)
 
 - :material-code-braces: **API Reference**
 
     ---
 
-    API documentation for key DimOS modules, including agents, robot interfaces, and skills.
+    Reference for DimOS's public API.
 
     [:octicons-arrow-right-24: Explore API](api/index.md)
 
 </div>
-
-## Key Features
-
-TODO
 
 ## Community
 
