@@ -201,7 +201,9 @@ class LerobotKinematics:
             if pos_error_norm < self._tol and orientation_error_norm < self._tol:
                 break
 
-            twist = np.concatenate([position_weight * pos_error, orientation_weight * orientation_error])
+            twist = np.concatenate(
+                [position_weight * pos_error, orientation_weight * orientation_error]
+            )
             J = self.jacobian(q)
 
             JJt = J @ J.T
@@ -218,7 +220,7 @@ class LerobotKinematics:
         if final_pos_error > 0.1:  # 10cm threshold
             raise ValueError(
                 "IK solver unable to find satisfactory solution. "
-                f"Final position error: {final_pos_error*100:.2f}cm (threshold: 10cm). "
+                f"Final position error: {final_pos_error * 100:.2f}cm (threshold: 10cm). "
                 f"Target position: {target_pos}, Final position: {final_pos}"
             )
 
@@ -292,10 +294,8 @@ class LerobotKinematics:
         rot0 = R.from_quat(quat0_xyzw)
         R0 = rot0.as_matrix()
 
-
         J = np.zeros((6, self.dof), dtype=float)
         eps_rad = self._jacobian_eps
-
 
         for i in range(self.dof):
             q_pert_deg = q_deg.copy()

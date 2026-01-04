@@ -603,7 +603,7 @@ class ManipulationModule(Module):
         """
         Apply gripper offset for specific arm types.
         For SO101, applies a +1cm X offset in local gripper frame to account for fixed left finger.
-        
+
         Args:
             pose: Original target pose
 
@@ -618,20 +618,17 @@ class ManipulationModule(Module):
                     pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w
                 ),
             )
-            
+
             # Calculate offset in world frame
             # Transform local +X offset (1cm) to world frame using current orientation
-            rot = Rotation.from_quat([
-                pose.orientation.x, 
-                pose.orientation.y, 
-                pose.orientation.z, 
-                pose.orientation.w
-            ])
-            
+            rot = Rotation.from_quat(
+                [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
+            )
+
             # Offset 1cm in +X direction of gripper frame
             local_offset = np.array([0.02, 0.0, 0.0])
             world_offset = rot.apply(local_offset)
-            
+
             # Apply offset to position
             new_pose.position.x += world_offset[0]
             new_pose.position.y += world_offset[1]
