@@ -15,14 +15,13 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-import mujoco
-import mujoco.viewer as viewer
-
+from dimos.simulation.manipulators.mujoco_sim import MujocoSimBridgeBase
+from dimos.simulation.manipulators.mujoco_sim.constants import VELOCITY_STOP_THRESHOLD
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
@@ -31,7 +30,7 @@ if TYPE_CHECKING:
 logger = setup_logger()
 
 
-class XArmSimBridge:
+class XArmSimBridge(MujocoSimBridgeBase):
     """
     Lightweight, in-process backend that mimics the subset of the UFACTORY xArm
     SDK used by ``XArmDriver``.
@@ -50,35 +49,18 @@ class XArmSimBridge:
         joint_state_rate: float,
         control_frequency: float,
     ):
-        model_folder = f"xarm{num_joints}"
-        self._model_path = (
-            Path(__file__).parent.parent.parent.parent
-            / "simulation"
-            / "data"
-            / model_folder
-            / "scene.xml"
+        # Initialize base class (loads model, sets up threading, etc.)
+        super().__init__(
+            robot_name="xarm",
+            num_joints=num_joints,
+            control_frequency=control_frequency,
         )
 
-        if not self._model_path.exists():
-            raise FileNotFoundError(
-                f"MuJoCo model not found for xarm{num_joints}: {self._model_path}. "
-                f"Available models: xarm6, xarm7"
-            )
-
-        logger.info(f"SimDriverBridge: Loading {model_folder} model from {self._model_path}")
-
         self._is_radian = is_radian
-        self._num_joints = num_joints
         self._report_type = 100 if report_type == "dev" else 5
         self._joint_state_rate = joint_state_rate if joint_state_rate > 0 else 0.01
-        self._control_frequency = control_frequency if control_frequency > 0 else 0.01
 
-        # --- mujoco model & data --- #
-        self._model = mujoco.MjModel.from_xml_path(str(self._model_path))
-        self._data = mujoco.MjData(self._model)
-
-        # --- state variables --- #
-        self._connected: bool = False
+        # --- XArm-specific state variables --- #
         self._mode = 0
         self._state = 0
         self._cmdnum = 0
@@ -86,45 +68,88 @@ class XArmSimBridge:
         self._warn_code = 0
         self._motion_enabled = True
 
-        # --- joint targets and measured states --- #
-        self._lock = threading.Lock()
-        self._stop_event = threading.Event()
-        self._sim_thread: threading.Thread | None = None
+        # --- Additional threading for reports (XArm-specific) --- #
         self._report_thread: threading.Thread | None = None
         self._connect_callback: Callable[[bool, bool], None] | None = None
         self._report_callback: Callable[[dict], None] | None = None
 
-        self._joint_position_targets = [0.0] * self._num_joints
+        # --- Velocity control support --- #
         self._joint_velocity_targets = [0.0] * self._num_joints
-        self._joint_positions = [0.0] * self._num_joints
-        self._joint_velocities = [0.0] * self._num_joints
-        self._joint_efforts = [0.0] * self._num_joints
-
         self._velocity_control = False
         # For velocity control: MuJoCo uses position-controlled actuators, so we integrate
         # velocities to positions over time
         self._velocity_control_positions = [0.0] * self._num_joints
         self._hold_positions = [0.0] * self._num_joints
 
-        # Initialize targets to current positions to prevent falling due to gravity
-        for i in range(min(self._num_joints, self._model.nq)):
-            current_pos = float(self._data.qpos[i])
-            self._joint_position_targets[i] = current_pos
-            self._hold_positions[i] = current_pos
-            self._velocity_control_positions[i] = current_pos
+        # Initialize velocity control positions from current state
+        with self._lock:
+            for i in range(min(self._num_joints, self._model.nq)):
+                current_pos = float(self._data.qpos[i])
+                self._hold_positions[i] = current_pos
+                self._velocity_control_positions[i] = current_pos
 
         self._ft_ext_force = [0.0] * 6
         self._ft_raw_force = [0.0] * 6
         self._version_number = (1, 8, 103)
         self._core = self._CoreProxy(self)
 
+    # ============= Abstract Method Implementations =============
+
+    def _apply_control(self) -> None:
+        """Apply control commands to MuJoCo actuators."""
+        with self._lock:
+            if self._velocity_control:
+                vel_targets = list(self._joint_velocity_targets)
+            else:
+                pos_targets = list(self._joint_position_targets)
+            motion_enabled = self._motion_enabled
+
+        if motion_enabled:
+            if self._velocity_control:
+                # Integrate velocity targets to position targets for MuJoCo control
+                dt = 1.0 / self._control_frequency
+                with self._lock:
+                    for i in range(self._num_joints):
+                        if i < self._model.nu:
+                            if abs(vel_targets[i]) < VELOCITY_STOP_THRESHOLD:
+                                # When stopped, hold current position to prevent drift
+                                if i < self._model.nq:
+                                    self._velocity_control_positions[i] = self._hold_positions[i]
+                            else:
+                                # Integrate: position += velocity * dt
+                                self._velocity_control_positions[i] += vel_targets[i] * dt
+                                self._hold_positions[i] = self._velocity_control_positions[i]
+                            self._data.ctrl[i] = self._velocity_control_positions[i]
+            else:
+                # Direct position control
+                with self._lock:
+                    for i in range(self._num_joints):
+                        if i < self._model.nu:
+                            self._data.ctrl[i] = pos_targets[i]
+                    self._hold_positions = list(pos_targets)
+
+    def _update_joint_state(self) -> None:
+        """Update internal joint state from MuJoCo simulation."""
+        with self._lock:
+            for i in range(self._num_joints):
+                if i < self._model.nq:  # no of generalized coordinates
+                    self._joint_positions[i] = float(self._data.qpos[i])
+                if i < self._model.nv:  # no of generalized velocities
+                    self._joint_velocities[i] = float(self._data.qvel[i])
+                # Efforts from actuators
+                if i < self._model.nu:  # no of actuators
+                    self._joint_efforts[i] = float(
+                        self._data.qfrc_actuator[i]
+                        if i < len(self._data.qfrc_actuator)
+                        else 0.0
+                    )
+
     # ------------------------------------------------------------------ #
     # Properties (matching XArmAPI interface)
     # ------------------------------------------------------------------ #
     @property
     def connected(self) -> bool:
-        with self._lock:
-            return self._connected
+        return super().connected
 
     @connected.setter
     def connected(self, value: bool) -> None:
@@ -223,19 +248,15 @@ class XArmSimBridge:
     def connect(self) -> None:
         logger.info("XArmSimBridge: connect()")
         with self._lock:
-            self._connected = True
-            self._stop_event.clear()
             self._last_update_time = time.time()
 
         if self._connect_callback:
             self._connect_callback(True, True)
 
-        if self._sim_thread is None or not self._sim_thread.is_alive():
-            self._sim_thread = threading.Thread(
-                target=self._sim_loop, name="XArmSimBridgeSim", daemon=True
-            )
-            self._sim_thread.start()
+        # Start base class simulation thread
+        super().connect()
 
+        # Start report thread (XArm-specific)
         if self._report_thread is None or not self._report_thread.is_alive():
             self._report_thread = threading.Thread(
                 target=self._report_loop, name="XArmSimBridgeReport", daemon=True
@@ -244,15 +265,13 @@ class XArmSimBridge:
 
     def disconnect(self) -> int:
         logger.info("XArmSimBridge: disconnect()")
-        with self._lock:
-            self._connected = False
-            self._stop_event.set()
 
-        if self._sim_thread and self._sim_thread.is_alive():
-            self._sim_thread.join(timeout=1.0)
-
+        # Stop report thread first
         if self._report_thread and self._report_thread.is_alive():
             self._report_thread.join(timeout=1.0)
+
+        # Stop base class simulation thread
+        super().disconnect()
 
         if self._connect_callback:
             self._connect_callback(False, True)
@@ -321,74 +340,6 @@ class XArmSimBridge:
     # Joint state helpers
     # ------------------------------------------------------------------ #
 
-    def _sim_loop(self) -> None:
-        logger.info("XArmSimBridge: sim loop started")
-        dt = 1.0 / self._control_frequency
-
-        with viewer.launch_passive(
-            self._model, self._data, show_left_ui=False, show_right_ui=False
-        ) as m_viewer:
-            while m_viewer.is_running() and not self._stop_event.is_set():
-                loop_start = time.time()
-
-                # Get current targets and control mode
-                with self._lock:
-                    if self._velocity_control:
-                        vel_targets = list(self._joint_velocity_targets)
-                    else:
-                        pos_targets = list(self._joint_position_targets)
-                    motion_enabled = self._motion_enabled
-
-                if motion_enabled:
-                    if self._velocity_control:
-                        # Integrate velocity targets to position targets for MuJoCo control
-                        with self._lock:
-                            for i in range(self._num_joints):
-                                if i < self._model.nu:
-                                    if abs(vel_targets[i]) < 1e-6:
-                                        # When stopped, hold current position to prevent drift
-                                        if i < self._model.nq:
-                                            self._velocity_control_positions[i] = (
-                                                self._hold_positions[i]
-                                            )
-                                    else:
-                                        # Integrate: position += velocity * dt
-                                        self._velocity_control_positions[i] += vel_targets[i] * dt
-                                        self._hold_positions[i] = self._velocity_control_positions[
-                                            i
-                                        ]
-                                    self._data.ctrl[i] = self._velocity_control_positions[i]
-                    else:
-                        # Direct position control
-                        with self._lock:
-                            for i in range(self._num_joints):
-                                if i < self._model.nu:
-                                    self._data.ctrl[i] = pos_targets[i]
-                            self._hold_positions = list(pos_targets)
-
-                mujoco.mj_step(self._model, self._data)
-                m_viewer.sync()
-
-                # Update joint state from simulation (thread-safe)
-                with self._lock:
-                    for i in range(self._num_joints):
-                        if i < self._model.nq:
-                            self._joint_positions[i] = float(self._data.qpos[i])
-                        if i < self._model.nv:
-                            self._joint_velocities[i] = float(self._data.qvel[i])
-                        if i < self._model.nu:
-                            self._joint_efforts[i] = float(
-                                self._data.qfrc_actuator[i]
-                                if i < len(self._data.qfrc_actuator)
-                                else 0.0
-                            )
-
-                # Maintain accurate control frequency by accounting for execution time
-                elapsed = time.time() - loop_start
-                sleep_time = dt - elapsed
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-        logger.info("XArmSimBridge: sim loop stopped")
 
     def _notify_report(self) -> None:
         callback = self._report_callback
