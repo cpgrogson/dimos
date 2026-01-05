@@ -130,23 +130,35 @@ def _process_xacro(
             "xacro is required for processing .xacro files. Install with: pip install xacro"
         )
 
-    # Build xacro arguments
-    args = []
-    for key, value in xacro_args.items():
-        args.append(f"{key}:={value}")
+    # Create a custom substitution_args_context that resolves $(find pkg) to our paths
+    # This avoids requiring ROS package discovery
+    from xacro import substitution_args
 
-    # Set up substitution args for package paths
-    substitution_args = {}
-    for pkg_name, pkg_path in package_paths.items():
-        substitution_args[f"find {pkg_name}"] = pkg_path
+    # Store original function
+    original_find = substitution_args._find
 
-    # Process xacro
-    doc = xacro.process_file(
-        str(xacro_path),
-        mappings=xacro_args,
-    )
+    def custom_find(resolved: str, a: str, args: list, context: dict) -> str:
+        """Custom $(find pkg) handler that uses our package_paths."""
+        pkg_name = args[0] if args else ""
+        if pkg_name in package_paths:
+            pkg_path = str(Path(package_paths[pkg_name]).resolve())
+            return resolved.replace(f"$({a})", pkg_path)
+        # Fall back to original behavior
+        return original_find(resolved, a, args, context)
 
-    return doc.toprettyxml(indent="  ")
+    # Monkey-patch the find function temporarily
+    substitution_args._find = custom_find
+
+    try:
+        # Process xacro with our mappings
+        doc = xacro.process_file(
+            str(xacro_path),
+            mappings=xacro_args,
+        )
+        return doc.toprettyxml(indent="  ")
+    finally:
+        # Restore original function
+        substitution_args._find = original_find
 
 
 def _resolve_package_uris(
