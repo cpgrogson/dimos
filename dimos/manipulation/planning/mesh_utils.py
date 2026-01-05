@@ -113,12 +113,12 @@ def _generate_cache_key(
     convert_meshes: bool,
 ) -> str:
     """Generate a cache key for the URDF configuration.
-    
+
     Includes a version number to invalidate cache when processing logic changes.
     """
     # Include file modification time
     mtime = urdf_path.stat().st_mtime if urdf_path.exists() else 0
-    
+
     # Version number to invalidate cache when processing logic changes
     # Increment this when adding new processing steps (e.g., stripping transmission blocks)
     processing_version = "v2"
@@ -173,28 +173,28 @@ def _process_xacro(
 
 def _strip_transmission_blocks(urdf_content: str) -> str:
     """Remove transmission blocks from URDF content.
-    
+
     Drake doesn't need transmission blocks (they're for Gazebo/ROS control),
     and they can cause parsing errors if they contain malformed actuator names.
-    
+
     Args:
         urdf_content: URDF XML content as string
-        
+
     Returns:
         URDF content with transmission blocks removed
     """
     # Pattern to match <transmission>...</transmission> blocks (including nested content)
     # Uses non-greedy matching and handles nested tags
-    pattern = r'<transmission[^>]*>.*?</transmission>'
-    
+    pattern = r"<transmission[^>]*>.*?</transmission>"
+
     # Remove transmission blocks (with flags for multiline and dotall)
-    result = re.sub(pattern, '', urdf_content, flags=re.DOTALL | re.MULTILINE)
-    
+    result = re.sub(pattern, "", urdf_content, flags=re.DOTALL | re.MULTILINE)
+
     # Also remove any standalone <gazebo> blocks that might reference transmissions
     # (some URDFs have gazebo plugins that reference transmissions)
-    gazebo_pattern = r'<gazebo>.*?<plugin[^>]*gazebo_ros_control[^>]*>.*?</plugin>.*?</gazebo>'
-    result = re.sub(gazebo_pattern, '', result, flags=re.DOTALL | re.MULTILINE)
-    
+    gazebo_pattern = r"<gazebo>.*?<plugin[^>]*gazebo_ros_control[^>]*>.*?</plugin>.*?</gazebo>"
+    result = re.sub(gazebo_pattern, "", result, flags=re.DOTALL | re.MULTILINE)
+
     return result
 
 

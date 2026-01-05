@@ -261,8 +261,8 @@ piper_manipulation = autoconnect(
 
 
 __all__ = [
+    "piper_manipulation",
     "xarm6_manipulation",
     "xarm6_planner_only",
     "xarm7_manipulation",
-    "piper_manipulation",
 ]

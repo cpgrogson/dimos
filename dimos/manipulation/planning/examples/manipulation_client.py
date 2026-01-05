@@ -331,11 +331,15 @@ def interactive_mode(client: ManipulationClient) -> None:
                         ee_pose = client.get_ee_pose()
                         if ee_pose is not None and len(ee_pose) >= 6:
                             roll, pitch, yaw = ee_pose[3], ee_pose[4], ee_pose[5]
-                            print(f"Using current orientation: roll={roll:.2f}, pitch={pitch:.2f}, yaw={yaw:.2f}")
+                            print(
+                                f"Using current orientation: roll={roll:.2f}, pitch={pitch:.2f}, yaw={yaw:.2f}"
+                            )
                         else:
                             # Fallback to default if EE pose not available
                             roll, pitch, yaw = np.pi, 0.0, 0.0
-                            print("Warning: Could not get current EE pose, using default orientation")
+                            print(
+                                "Warning: Could not get current EE pose, using default orientation"
+                            )
                     success = client.plan_to_pose(x, y, z, roll, pitch, yaw)
                     print(f"Planning success: {success}")
                     if success:
