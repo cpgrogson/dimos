@@ -86,6 +86,7 @@ piper_servo = piper_driver(
     enable_on_start=True,
     control_rate=100,
     monitor_rate=10,
+    connection_type="hardware",
 ).transports(
     {
         # Joint state feedback (position, velocity, effort)
@@ -155,6 +156,37 @@ piper_trajectory = autoconnect(
         enable_on_start=True,
         control_rate=100,
         monitor_rate=10,
+        connection_type="hardware",
+    ),
+    joint_trajectory_controller(
+        control_frequency=100.0,
+    ),
+).transports(
+    {
+        # Shared topics between driver and controller
+        ("joint_state", JointState): LCMTransport("/piper/joint_states", JointState),
+        ("robot_state", RobotState): LCMTransport("/piper/robot_state", RobotState),
+        ("joint_position_command", JointCommand): LCMTransport(
+            "/piper/joint_position_command", JointCommand
+        ),
+        # Trajectory input topic
+        ("trajectory", JointTrajectory): LCMTransport("/trajectory", JointTrajectory),
+    }
+)
+
+# =============================================================================
+# Piper Trajectory Simulation Blueprint
+# =============================================================================
+# Same as piper_trajectory but using MuJoCo simulation instead of hardware.
+# =============================================================================
+
+piper_trajectory_sim = autoconnect(
+    piper_driver(
+        can_port="can0",
+        has_gripper=True,
+        enable_on_start=True,
+        control_rate=100,
+        monitor_rate=10,
         connection_type="sim",
     ),
     joint_trajectory_controller(
@@ -173,4 +205,4 @@ piper_trajectory = autoconnect(
     }
 )
 
-__all__ = ["piper_cartesian", "piper_servo", "piper_trajectory"]
+__all__ = ["piper_cartesian", "piper_servo", "piper_trajectory", "piper_trajectory_sim"]
