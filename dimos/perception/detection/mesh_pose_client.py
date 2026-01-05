@@ -33,11 +33,10 @@ from typing import TYPE_CHECKING, Optional
 from urllib.parse import urljoin
 
 import numpy as np
-import requests
 from PIL import Image as PILImage
+import requests
 
 from dimos.perception.detection.type.detection3d.mesh import Detection3DMesh
-from dimos.perception.detection.type.detection3d.pointcloud import Detection3DPC
 
 if TYPE_CHECKING:
     from dimos_lcm.sensor_msgs import CameraInfo
@@ -46,6 +45,7 @@ if TYPE_CHECKING:
     from dimos.perception.detection.type.detection3d.imageDetections3DPC import (
         ImageDetections3DPC,
     )
+    from dimos.perception.detection.type.detection3d.pointcloud import Detection3DPC
 
 logger = logging.getLogger(__name__)
 
@@ -142,9 +142,7 @@ class MeshPoseClient:
                 camera_info=camera_info,
             )
 
-            logger.info(
-                f"Sending request to mesh/pose service for label='{detection.name}'"
-            )
+            logger.info(f"Sending request to mesh/pose service for label='{detection.name}'")
 
             # Make HTTP request
             resp = self._session.post(
@@ -430,5 +428,3 @@ class MeshPoseClient:
 
 
 __all__ = ["MeshPoseClient"]
-
-

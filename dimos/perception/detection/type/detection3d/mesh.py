@@ -52,14 +52,14 @@ class Detection3DMesh(Detection3DPC):
     """
 
     # Mesh data
-    mesh_obj: Optional[bytes] = None
+    mesh_obj: bytes | None = None
 
     # Mesh-derived dimensions (more accurate than pointcloud-derived)
-    mesh_dimensions: Optional[tuple[float, float, float]] = None
+    mesh_dimensions: tuple[float, float, float] | None = None
 
     # FoundationPose results (stored separately to allow pose override)
-    fp_position: Optional[tuple[float, float, float]] = None
-    fp_orientation: Optional[tuple[float, float, float, float]] = None  # (x, y, z, w)
+    fp_position: tuple[float, float, float] | None = None
+    fp_orientation: tuple[float, float, float, float] | None = None  # (x, y, z, w)
     fp_confidence: float = 1.0
 
     @property
@@ -141,12 +141,12 @@ class Detection3DMesh(Detection3DPC):
     def from_detection3d_pc(
         cls,
         detection: Detection3DPC,
-        mesh_obj: Optional[bytes] = None,
-        mesh_dimensions: Optional[tuple[float, float, float]] = None,
-        fp_position: Optional[tuple[float, float, float]] = None,
-        fp_orientation: Optional[tuple[float, float, float, float]] = None,
+        mesh_obj: bytes | None = None,
+        mesh_dimensions: tuple[float, float, float] | None = None,
+        fp_position: tuple[float, float, float] | None = None,
+        fp_orientation: tuple[float, float, float, float] | None = None,
         fp_confidence: float = 1.0,
-    ) -> "Detection3DMesh":
+    ) -> Detection3DMesh:
         """
         Create Detection3DMesh from an existing Detection3DPC.
 
@@ -190,5 +190,3 @@ class Detection3DMesh(Detection3DPC):
 
 
 __all__ = ["Detection3DMesh"]
-
-

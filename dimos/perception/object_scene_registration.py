@@ -40,7 +40,6 @@ from dimos.msgs.geometry_msgs import Transform
 from dimos.msgs.sensor_msgs import CameraInfo, Image
 from dimos.perception.detection.detectors.yoloe import Yoloe2DDetector, YoloePromptMode
 from dimos.perception.detection.mesh_pose_client import MeshPoseClient
-from dimos.perception.detection.type import ImageDetections2D
 from dimos.perception.detection.objectDB import ObjectDB
 from dimos.perception.detection.type import ImageDetections2D
 from dimos.perception.detection.type.detection3d.object import (
@@ -127,9 +126,7 @@ class ObjectSceneRegistrationModule(Module):
                 service_url=self._mesh_pose_service_url,
             )
             if self._mesh_pose_client.health_check():
-                logger.info(
-                    f"Mesh/pose enhancement enabled via {self._mesh_pose_service_url}"
-                )
+                logger.info(f"Mesh/pose enhancement enabled via {self._mesh_pose_service_url}")
             else:
                 logger.warning(
                     f"Mesh/pose service at {self._mesh_pose_service_url} is not healthy, "
