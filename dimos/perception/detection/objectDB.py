@@ -272,8 +272,8 @@ class ObjectDB:
                 del self._pending_objects[obj.object_id]
                 self._objects[obj.object_id] = obj
                 logger.info(
-                    f"Promoted object {obj.object_id} ({obj.name}) to permanent "
-                    f"with {obj.detections_count} detections"
+                    f"Promoted object {obj.object_id} ({obj.name}) to permanent, "
+                    f"total detections: {len(self._objects)}"
                 )
 
     def _prune_stale_pending(self, now_ts: float) -> None:
