@@ -23,7 +23,7 @@ from . import prompt_tools as p
 from .bundled_data import FLAKE_TEMPLATE
 from .constants import minimum_nix_version
 from .installer_status import installer_status
-from .misc import ProgressRenderer, is_version_at_least, parse_version
+from .misc import is_version_at_least, parse_version
 from .shell_tooling import command_exists, run_command
 
 
@@ -130,13 +130,8 @@ def nix_install(package_names: list[str]) -> None:
     ensure_nix_exists()
     ensure_flakes_enabled()
 
-    progress = ProgressRenderer(len(package_names)) if len(package_names) > 1 else None
-
     failed_packages: list[str] = []
-    for idx, each_pkg in enumerate(package_names, start=1):
-        if progress and progress.enabled:
-            progress.set_current(idx, each_pkg)
-
+    for each_pkg in package_names:
         installed = False
         list_res = run_command(
             ["nix", "profile", "list", "--json"],
@@ -165,35 +160,14 @@ def nix_install(package_names: list[str]) -> None:
 
         install_cmd = ["nix", "profile", "install", f"nixpkgs#{each_pkg}"]
 
-        if progress and progress.enabled:
-            output_lines: list[str] = []
-
-            def _on_line(line: str) -> None:
-                output_lines.append(line.rstrip("\n"))
-                progress.add_output(line)
-
-            install_res = run_command(
-                install_cmd,
-                print_command=True,
-                dry_run=installer_status["dry_run"],
-                stream_callback=_on_line,
-            )
-            if install_res.code != 0:
-                progress.finish()
-                if output_lines:
-                    print("\n".join(output_lines))
-        else:
-            install_res = run_command(
-                install_cmd,
-                print_command=True,
-                dry_run=installer_status["dry_run"],
-            )
+        install_res = run_command(
+            install_cmd,
+            print_command=True,
+            dry_run=installer_status["dry_run"],
+        )
 
         if install_res.code != 0:
             failed_packages.append(each_pkg)
-
-    if progress and progress.enabled:
-        progress.finish()
 
     if failed_packages:
         cmds = "\n".join(f"    nix profile install nixpkgs#{pkg}" for pkg in failed_packages)

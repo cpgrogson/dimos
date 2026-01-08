@@ -82,7 +82,6 @@ def run_command(
     env: dict[str, str] | None = None,
     print_command: bool = False,
     dry_run: bool = False,
-    output_preview: bool = False,
     stream_callback: Callable[[str], None] | None = None,
     combine_streams: bool = True,
 ) -> CommandResult:
@@ -115,9 +114,6 @@ def run_command(
     if print_command:
         print(f"$ {cmd_string}")
 
-    if stream_callback and output_preview:
-        raise ValueError("stream_callback and output_preview cannot be used together")
-
     if stream_callback:
         process = subprocess.Popen(
             cmd_list,
@@ -147,52 +143,6 @@ def run_command(
             _stdout="".join(collected) if capture_output else None,
             _stderr=None,
             _captured=capture_output,
-        )
-
-    if output_preview and capture_output:
-        # stream line-by-line with \r, while capturing
-        process = subprocess.Popen(
-            cmd_list,
-            cwd=str(cwd) if cwd is not None else None,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        combined_chunks: list[str] = []
-        term_width = shutil.get_terminal_size(fallback=(80, 24)).columns
-
-        def _emit(line: str):
-            clipped = (line.rstrip("\n")).replace("\r", "")
-            if len(clipped) > term_width - 1:
-                clipped = clipped[: term_width - 1]
-            sys.stdout.write("\r" + clipped + " " * max(0, term_width - len(clipped) - 1))
-            sys.stdout.flush()
-            combined_chunks.append(line)
-
-        # read stdout/stderr interleaved-ish
-        while True:
-            out_line = process.stdout.readline() if process.stdout else ""
-            err_line = process.stderr.readline() if process.stderr else ""
-            if not out_line and not err_line and process.poll() is not None:
-                break
-            if out_line:
-                _emit(out_line)
-            if err_line:
-                _emit(err_line)
-
-        code = process.wait()
-        sys.stdout.write("\n")
-        stdout_combined = "".join(combined_chunks)
-        if code != 0:
-            print("---- command output ----")
-            print(stdout_combined)
-            print("------------------------")
-        return CommandResult(
-            code=code,
-            _stdout=stdout_combined,
-            _stderr="",
-            _captured=True,
         )
 
     completed = subprocess.run(

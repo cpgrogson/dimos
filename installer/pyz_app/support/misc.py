@@ -15,12 +15,9 @@
 
 from __future__ import annotations
 
-from collections import deque
 from pathlib import Path
 import re
-import shutil
 import subprocess
-import sys
 from textwrap import dedent
 import threading
 from typing import TYPE_CHECKING
@@ -30,10 +27,11 @@ import requests
 from . import prompt_tools as p
 from .bundled_data import DEP_2_HUMAN_NAME, PIP_DEP_DATABASE, PROJECT_TOML
 from .constants import (
-    dependency_apt_packages_set_minimal,
-    dependency_brew_set_minimal,
-    dependency_human_names_set,
-    dependency_nix_packages_set_minimal,
+    DEPENDENCY_APT_PACKAGES_SET_MINIMAL,
+    DEPENDENCY_BREW_SET_MINIMAL,
+    DEPENDENCY_HUMAN_NAMES_SET,
+    DEPENDENCY_NIX_PACKAGES_SET_MINIMAL,
+    DEFAULT_GITIGNORE_CONTENT,
 )
 from .installer_status import installer_status
 from .shell_tooling import command_exists, run_command
@@ -44,95 +42,6 @@ if TYPE_CHECKING:
 _project_directory: Path | None = None
 _already_called_apt_get_update = False
 _already_called_brew_update = False
-
-
-class ProgressRenderer:
-    """Minimal multi-line progress display with rolling output buffer."""
-
-    def __init__(self, total: int, *, buffer_lines: int = 5) -> None:
-        # Temporarily disable interactive progress rendering due to display issues.
-        self.total = max(total, 1)
-        self.buffer: deque[str] = deque(maxlen=buffer_lines)
-        self.current_index = 0
-        self.current_name = ""
-        self.rendered_lines = 0
-        self.enabled = False
-        self.term_width = shutil.get_terminal_size(fallback=(80, 24)).columns
-        self.color_bar = "\x1b[32m"  # green
-        self.color_label = "\x1b[36m"  # cyan
-        self.reset = "\x1b[0m"
-
-    def set_current(self, index: int, name: str) -> None:
-        self.current_index = index
-        self.current_name = name
-        self.render()
-
-    def add_output(self, line: str) -> None:
-        if not self.enabled:
-            return
-        # strip ANSI escape sequences to avoid breaking layout
-        cleaned = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)
-        cleaned = cleaned.rstrip("\n").rstrip("\r")
-        self.buffer.append(cleaned)
-        self.render()
-
-    def render(self) -> None:
-        if not self.enabled:
-            return
-
-        self.term_width = shutil.get_terminal_size(fallback=(80, 24)).columns
-        bar_width = max(10, min(40, self.term_width - 30))
-        completed = max(0, self.current_index - 1)
-        fill = int(bar_width * (completed / self.total))
-        bar_body = f"{'━' * fill}{' ' * (bar_width - fill)}"
-        bar = f"{self.color_bar}┏{bar_body}┓{self.reset}"
-        label = f"{self.color_label}{self.current_name}{self.reset}"
-        progress_line = f"{bar} ({self.current_index}/{self.total}) installing {label}"
-
-        def _visible_len(text: str) -> int:
-            # crude ANSI stripper for length calculations
-            return len(re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text))
-
-        def clip(text: str) -> str:
-            if _visible_len(text) <= self.term_width:
-                return text + " " * max(0, self.term_width - _visible_len(text))
-            trimmed = text
-            while _visible_len(trimmed) > self.term_width:
-                trimmed = trimmed[:-1]
-            return trimmed + " " * max(0, self.term_width - _visible_len(trimmed))
-
-        max_lines = 1 + self.buffer.maxlen
-        lines: list[str] = [clip(progress_line)]
-        lines.extend(clip(l) for l in list(self.buffer)[-self.buffer.maxlen :])
-        lines = lines[:max_lines]
-
-        # Move cursor up to the start of the previous block
-        if self.rendered_lines:
-            sys.stdout.write(f"\x1b[{self.rendered_lines}F")
-
-        sys.stdout.write("\x1b[?25l")  # hide cursor
-        total_lines = len(lines)
-        for idx, line in enumerate(lines):
-            sys.stdout.write("\r")
-            sys.stdout.write(line.ljust(self.term_width))
-            sys.stdout.write("\x1b[K")
-            if idx != total_lines - 1:
-                sys.stdout.write("\n")
-        # Clear any leftover lines from previous render
-        if self.rendered_lines > total_lines:
-            for _ in range(self.rendered_lines - total_lines):
-                sys.stdout.write("\n")
-                sys.stdout.write(" " * self.term_width)
-        sys.stdout.flush()
-        self.rendered_lines = total_lines
-
-    def finish(self) -> None:
-        if not self.enabled:
-            return
-        # Ensure cursor lands after the rendered block and becomes visible
-        sys.stdout.write("\x1b[?25h\n")
-        sys.stdout.flush()
-
 
 def get_system_deps(feature: str | None):
     apt_deps: set[str] = set()
@@ -167,9 +76,9 @@ def get_system_deps(feature: str | None):
                 nix_deps.update(value)
             elif key == "brew_dependencies":
                 brew_deps.update(value)
-    apt_deps = apt_deps | dependency_apt_packages_set_minimal
-    nix_deps = nix_deps | dependency_nix_packages_set_minimal
-    brew_deps = brew_deps | dependency_brew_set_minimal
+    apt_deps = apt_deps | DEPENDENCY_APT_PACKAGES_SET_MINIMAL
+    nix_deps = nix_deps | DEPENDENCY_NIX_PACKAGES_SET_MINIMAL
+    brew_deps = brew_deps | DEPENDENCY_BREW_SET_MINIMAL
     combined_deps = set(apt_deps) | set(nix_deps) | set(brew_deps)
     return {
         "apt_deps": sorted(apt_deps),
@@ -177,16 +86,16 @@ def get_system_deps(feature: str | None):
         "brew_deps": sorted(brew_deps),
         "pip_deps": sorted(pip_deps),
         "human_names_all": sorted(
-            dependency_human_names_set | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in combined_deps}
+            DEPENDENCY_HUMAN_NAMES_SET | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in combined_deps}
         ),
         "human_names_from_apt": sorted(
-            dependency_human_names_set | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in apt_deps}
+            DEPENDENCY_HUMAN_NAMES_SET | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in apt_deps}
         ),
         "human_names_from_brew": sorted(
-            dependency_human_names_set | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in brew_deps}
+            DEPENDENCY_HUMAN_NAMES_SET | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in brew_deps}
         ),
         "human_names_from_nix": sorted(
-            dependency_human_names_set | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in nix_deps}
+            DEPENDENCY_HUMAN_NAMES_SET | {DEP_2_HUMAN_NAME.get(dep, dep) for dep in nix_deps}
         ),
         "missing": missing,
     }
@@ -304,8 +213,6 @@ def apt_install(package_names: list[str]) -> None:
     if not package_names:
         return
 
-    progress = ProgressRenderer(len(package_names)) if len(package_names) > 1 else None
-
     if not _already_called_apt_get_update:
         update_res = run_command(
             ["sudo", "apt-get", "update"],
@@ -317,9 +224,7 @@ def apt_install(package_names: list[str]) -> None:
         _already_called_apt_get_update = True
 
     failed_packages: list[str] = []
-    for idx, each_pkg in enumerate(package_names, start=1):
-        if progress and progress.enabled:
-            progress.set_current(idx, each_pkg)
+    for each_pkg in package_names:
         res = run_command(
             ["dpkg", "-s", each_pkg], dry_run=installer_status["dry_run"], capture_output=True
         )
@@ -333,34 +238,13 @@ def apt_install(package_names: list[str]) -> None:
                 continue
 
         p.sub_header(f"\n- installing {p.highlight(each_pkg)}")
-        if progress and progress.enabled:
-            output_lines: list[str] = []
-
-            def _on_line(line: str) -> None:
-                output_lines.append(line.rstrip("\n"))
-                progress.add_output(line)
-
-            install_res = run_command(
-                ["sudo", "apt-get", "install", "-y", each_pkg],
-                print_command=True,
-                dry_run=installer_status["dry_run"],
-                stream_callback=_on_line,
-            )
-            if install_res.code != 0:
-                progress.finish()
-                if output_lines:
-                    print("\n".join(output_lines))
-        else:
-            install_res = run_command(
-                ["sudo", "apt-get", "install", "-y", each_pkg],
-                print_command=True,
-                dry_run=installer_status["dry_run"],
-            )
+        install_res = run_command(
+            ["sudo", "apt-get", "install", "-y", each_pkg],
+            print_command=True,
+            dry_run=installer_status["dry_run"],
+        )
         if install_res.code != 0:
             failed_packages.append(each_pkg)
-
-    if progress and progress.enabled:
-        progress.finish()
 
     if failed_packages:
         cmds = "\n".join(f"    sudo apt-get install -y {pkg}" for pkg in failed_packages)
@@ -418,8 +302,6 @@ def brew_install(package_names: list[str]) -> None:
     if not package_names:
         return
 
-    progress = ProgressRenderer(len(package_names)) if len(package_names) > 1 else None
-
     ensure_homebrew()
     if not _already_called_brew_update:
         p.boring_log("Running brew update")
@@ -431,40 +313,17 @@ def brew_install(package_names: list[str]) -> None:
         _already_called_brew_update = True
 
     failed: list[str] = []
-    for idx, pkg in enumerate(package_names, start=1):
-        if progress and progress.enabled:
-            progress.set_current(idx, pkg)
+    for pkg in package_names:
         res = run_command(["brew", "list", pkg], capture_output=True)  # intentionally not dry_run
         if res.code == 0:
             p.sub_header(f"- ✅ looks like {p.highlight(pkg)} is already installed")
             continue
         p.sub_header(f"\n- installing {p.highlight(pkg)}")
-        if progress and progress.enabled:
-            output_lines: list[str] = []
-
-            def _on_line(line: str) -> None:
-                output_lines.append(line.rstrip("\n"))
-                progress.add_output(line)
-
-            install_res = run_command(
-                ["brew", "install", pkg],
-                print_command=True,
-                dry_run=installer_status["dry_run"],
-                stream_callback=_on_line,
-            )
-            if install_res.code != 0:
-                progress.finish()
-                if output_lines:
-                    print("\n".join(output_lines))
-        else:
-            install_res = run_command(
-                ["brew", "install", pkg], print_command=True, dry_run=installer_status["dry_run"]
-            )
+        install_res = run_command(
+            ["brew", "install", pkg], print_command=True, dry_run=installer_status["dry_run"]
+        )
         if install_res.code != 0:
             failed.append(pkg)
-
-    if progress and progress.enabled:
-        progress.finish()
 
     if failed:
         raise RuntimeError(f"brew install failed for: {' '.join(failed)}")
@@ -555,246 +414,19 @@ def maybe_write(path: Path, content: str) -> bool:
     return True
 
 
-GITIGNORE_CONTENT = dedent("""\
-# generic ignore pattern
-**/*.ignore
-**/*.ignore.*
-
-# MacOS
-**/.DS_Store
-
-# direnv/dotenv
-.env
-# .envrc
-.direnv/
-
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[codz]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py.cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-.pybuilder/
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
-
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
-
-# UV
-#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#uv.lock
-
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
-#poetry.toml
-
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
-#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
-#pdm.lock
-#pdm.toml
-.pdm-python
-.pdm-build/
-
-# pixi
-#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
-#pixi.lock
-#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
-#   in the .venv directory. It is recommended not to include this directory in version control.
-.pixi
-
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# pytype static type analyzer
-.pytype/
-
-# Cython debug symbols
-cython_debug/
-
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
-
-# Abstra
-# Abstra is an AI-powered process automation framework.
-# Ignore directories containing user credentials, local state, and settings.
-# Learn more at https://abstra.io/docs
-.abstra/
-
-# Visual Studio Code
-#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore
-#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
-#  and can be added to the global gitignore or merged into this file. However, if you prefer,
-#  you could uncomment the following to ignore the entire vscode folder
-# .vscode/
-
-# Ruff stuff:
-.ruff_cache/
-
-# PyPI configuration file
-.pypirc
-
-# Cursor
-#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
-#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
-#  refer to https://docs.cursor.com/context/ignore-files
-.cursorignore
-.cursorindexingignore
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
-""")
-
-
 def init_repo_with_gitignore(repo_dir: str | Path) -> None:
     repo_dir = Path(repo_dir)
     repo_dir.mkdir(parents=True, exist_ok=True)
 
-    def run(cmd: list[str]) -> None:
-        try:
-            subprocess.run(cmd, cwd=repo_dir, check=True)
-        except Exception:
-            pass
-
-    run(["git", "init"])
+    run_command(["git", "init"], print_command=True)
     git_ignore = Path(repo_dir / ".gitignore")
     if not git_ignore.exists():
         git_ignore.write_text("", encoding="utf-8")
-    add_git_ignore_patterns(git_ignore, GITIGNORE_CONTENT.split("\n"))
-    run(["git", "add", ".gitignore"])
-    run(["git", "commit", "-m", "gitignore"])
-    run(["git", "add", "-A"])
-    run(["git", "commit", "-m", "init"])
+    add_git_ignore_patterns(git_ignore, DEFAULT_GITIGNORE_CONTENT.split("\n"))
+    run_command(["git", "add", ".gitignore"], print_command=True)
+    run_command(["git", "commit", "-m", "gitignore"], print_command=True)
+    run_command(["git", "add", "-A"], print_command=True)
+    run_command(["git", "commit", "-m", "init"], print_command=True)
 
 
 def in_git_repo() -> bool:
