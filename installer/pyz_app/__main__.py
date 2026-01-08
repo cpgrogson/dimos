@@ -19,34 +19,25 @@ import argparse
 import sys
 import textwrap
 
-print("- importing install phases")
-from .phases.phase00_logo_and_basic_checks import phase0
+from .phases.phase00_user_questions import phase0
 from .phases.phase01_all_system_dependencies import phase1
 from .phases.phase02_check_absolutely_necessary_tools import phase2
 from .phases.phase03_pip_install_dimos import phase3
 from .phases.phase04_dimos_check import phase4
-from .phases.phase05_env_setup import phase5
 from .support.bundled_data import PROJECT_TOML
 from .support.get_system_analysis import get_system_analysis
 from .support.installer_status import installer_status
-
-# Simple ANSI helpers for help text
-RESET = "\x1b[0m"
-BOLD = "\x1b[1m"
-FG_CYAN = "\x1b[36m"
-FG_GREEN = "\x1b[32m"
-
+from .support.prompt_tools import green, cyan
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     epilog = textwrap.dedent(
         f"""
-        {FG_GREEN}Examples:{RESET}
-          {FG_CYAN}dimos_installer --list-features{RESET}
-          {FG_CYAN}dimos_installer --non-interactive --features sim,cuda{RESET}
-          {FG_CYAN}dimos_installer --no-system-install --no-check --no-env-setup{RESET}
-          {FG_CYAN}dimos_installer --just-system-install{RESET}
+        {green('Examples:')}
+          {cyan('dimos_installer --list-features')}
+          {cyan('dimos_installer --non-interactive --features sim,cuda')}
+          {cyan('dimos_installer --no-system-install --no-check')}
+          {cyan('dimos_installer --just-system-install')}
 
-        v0.1.15
         """
     )
     parser = argparse.ArgumentParser(
@@ -68,11 +59,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-check",
         action="store_true",
         help="Skip phase4 (dimos check).",
-    )
-    parser.add_argument(
-        "--no-env-setup",
-        action="store_true",
-        help="Skip phase5 (environment setup).",
     )
     parser.add_argument(
         "--just-system-install",
@@ -113,13 +99,12 @@ def main():
     if args.features:
         cli_features = [f.strip() for f in args.features.split(",") if f.strip()]
 
+    selected_features = []
     if non_interactive:
         system_analysis = get_system_analysis()
         selected_features = cli_features
     else:
-        system_analysis, selected_features = phase0()
-        if cli_features:
-            selected_features = cli_features
+        system_analysis, selected_features = phase0(cli_features)
 
     if args.list_features:
         optional = PROJECT_TOML["project"].get("optional-dependencies", {})
@@ -138,9 +123,6 @@ def main():
     phase3(selected_features)
     if not args.no_check:
         phase4()
-    if not args.no_env_setup:
-        phase5()
-
 
 if __name__ == "__main__":
     main()

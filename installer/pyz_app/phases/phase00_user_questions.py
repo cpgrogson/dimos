@@ -33,12 +33,14 @@ from ..support.misc import (
 from ..support.setup_docker_env import setup_docker_env
 from ..support.setup_nix import ensure_flakes_enabled, nix_install, setup_nix_flake
 from ..support.shell_tooling import command_exists, run_command
+from ..support.dotenv import setup_dotenv
+from ..support.direnv import setup_direnv
 
 home = Path(expanduser("~"))
 dimos_cache = home / ".cache" / "dimos"
 
 
-def phase0():
+def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], list[str]]:
     #
     # provide animation while running system analysis
     #
@@ -52,7 +54,10 @@ def phase0():
         wave_freq=0.01,  # smaller = longer streaks of color
         scrollable=True,
     )
-
+    
+    #
+    # system analysis
+    #
     logo.log("- checking system")
     system_analysis = get_system_analysis()
     if not dimos_cache.exists():
@@ -71,10 +76,6 @@ def phase0():
         "cuda": cuda,
     }
     ordered_analysis["cuda"] = cuda
-
-    #
-    # print system analysis
-    #
     for key, result in ordered_analysis.items():
         name = result.get("name") or key
         exists = result.get("exists", False)
@@ -90,6 +91,9 @@ def phase0():
     logo.stop()
     p.clear_screen()
 
+    # 
+    # question 1: in a project directory?
+    # 
     p.header("First Phase: Feature Selection")
     # ask user project question up front
     project_dir = get_project_directory()
@@ -98,18 +102,33 @@ def phase0():
         # fill out the directory
         replace_strings_in_directory(project_dir, PLACEHOLDERS, project_name)
 
-    optional = PROJECT_TOML["project"].get("optional-dependencies", {})
-    features = [f for f in optional.keys() if f not in ["cpu"]]
-    selected_features = p.pick_many(
-        "Which features do you want? (Pick any number of features)", options=["basics", *features]
-    )
-    # basics is just a dummy entry to make it more user friendly
-    selected_features = [each for each in selected_features if each != "basics"]
-    if "sim" in selected_features and "cuda" not in selected_features:
-        selected_features.append("cpu")
+    # 
+    # question 2: which dimos features?
+    # 
+    if cli_features == None:
+        optional = PROJECT_TOML["project"].get("optional-dependencies", {})
+        features = [f for f in optional.keys() if f not in ["cpu"]]
+        selected_features = p.pick_many(
+            "Which features do you want? (Pick any number of features)", options=["basics", *features]
+        )
+        # basics is just a dummy entry to make it more user friendly
+        selected_features = [each for each in selected_features if each != "basics"]
+        if "sim" in selected_features and "cuda" not in selected_features:
+            selected_features.append("cpu")
+    
+    # 
+    # question 3: setup .env and .envrc?
+    # 
+    env_path = f"{project_dir}/.env"
+    envrc_path = f"{project_dir}/.envrc"
+    has_dotenv = setup_dotenv(project_dir, env_path)
+    if not has_dotenv:
+        return
+
+    setup_direnv(envrc_path)
 
     #
-    # pick install method
+    # question 4: what install method?
     #
     while True:
         choice = p.pick_one(
@@ -187,7 +206,6 @@ def phase0():
             # FIXME: change before release
             print(f"because you're on dev run: {p.highlight(dev_command)}")
 
-            # TODO: ask if they would like us to setup .envrc for them
             raise SystemExit(0)
 
     return system_analysis, selected_features
