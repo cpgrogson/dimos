@@ -239,7 +239,8 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
                 print("You need to install git for the flake.nix to work")
                 print("Should I install it for you? (y/n)")
                 nix_install(["git"])  # this will install nix if needed
-
+            
+            git_commit_instruction = "\n- git commit the {p.highlight('flake.nix')}"
             if not Path(project_dir / ".git").exists():
                 if p.ask_yes_no(
                     "Your project doesn't seem to have a (direct) git repo.\nFlakes require a git repo.\nShould I initialize a new git repo for this flake?"
@@ -247,6 +248,7 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
                     init_repo_with_gitignore(project_dir)
                     run_command(["git", "add", "flake.nix"], print_command=True)
                     run_command(["git", "commit", "-m", "add flake.nix"], print_command=True)
+                    git_commit_instruction = ""
                     print()
                     print()
                 else:
@@ -258,13 +260,13 @@ def phase0(cli_features: list[str] | None = None) -> tuple[dict[str, object], li
             ensure_flakes_enabled()
             install_command = f"pip install dimos{feat_str}"
             print(
-                f"Once ready, git commit the {p.highlight('flake.nix')}, run {p.highlight('nix develop')}, then run {p.highlight(install_command)}"
+                f"Once you are ready:{git_commit_instruction}\n- run {p.highlight('nix develop')}\n- then run {p.highlight(install_command)}"
             )
             dev_command = (
                 f"pip install 'dimos{feat_str} @ git+ssh://git@github.com/dimensionalOS/dimos.git'"
             )
             # FIXME: change before release
-            print(f"because you're on dev run: {p.highlight(dev_command)}")
+            p.warning(f"because you're on dev run: {p.highlight(dev_command)}")
 
             raise SystemExit(0)
 
