@@ -77,7 +77,7 @@
             # if dimos not available. install it
             python3 -c "try: import dimos
 except: exit(1)" 2>/dev/null || pip install 'dimos @ git+ssh://git@github.com/dimensionalOS/dimos.git'
-            
+
           fi
         '';
 

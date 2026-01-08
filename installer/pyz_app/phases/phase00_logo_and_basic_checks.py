@@ -179,13 +179,13 @@ def phase0():
             ensure_flakes_enabled()
             install_command = f"pip install dimos{feat_str}"
             print(
-                f"Once ready, git commit the {p.highlight('flake.nix')}, run {p.highlight("nix develop")}, then run {p.highlight(install_command)}"
+                f"Once ready, git commit the {p.highlight('flake.nix')}, run {p.highlight('nix develop')}, then run {p.highlight(install_command)}"
             )
-            dev_command = f"pip install 'dimos{feat_str} @ git+ssh://git@github.com/dimensionalOS/dimos.git'"
+            dev_command = (
+                f"pip install 'dimos{feat_str} @ git+ssh://git@github.com/dimensionalOS/dimos.git'"
+            )
             # FIXME: change before release
-            print(
-                f"because you're on dev run: {p.highlight(dev_command)}"
-            )
+            print(f"because you're on dev run: {p.highlight(dev_command)}")
 
             # TODO: ask if they would like us to setup .envrc for them
             raise SystemExit(0)

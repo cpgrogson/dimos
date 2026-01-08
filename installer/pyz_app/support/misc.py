@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 
 _project_directory: Path | None = None
 
+
 def get_system_deps(feature: str | None):
     apt_deps: set[str] = set()
     nix_deps: set[str] = set()
