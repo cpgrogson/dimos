@@ -87,8 +87,13 @@ echo "- bootstrapping, stage 0.3"
 print("- bootstrapping, stage 0.4: temp python loaded")
 import os, sys, urllib.request, tempfile, runpy
 
-uri = "https://github.com/dimensionalOS/dimos/raw/refs/heads/main/installer.pyz"
-print(f"- getting stage 1 installer from: {uri}", file=sys.stderr)
+url = "https://github.com/dimensionalOS/dimos/releases/latest"
+latest_release_base = None
+with urllib.request.urlopen(url) as r:
+    latest_release_base = r.geturl().replace("/tag/","/download/")
+
+uri = f"{latest_release_base}/installer.pyz"
+print(f"- downloading stage 1 installer from: {uri}", file=sys.stderr)
 
 with urllib.request.urlopen(uri) as r:
     pyz_bytes = r.read()
