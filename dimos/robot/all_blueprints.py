@@ -44,6 +44,7 @@ all_blueprints = {
     "xarm6-trajectory-sim": "dimos.hardware.manipulators.xarm.xarm_blueprints:xarm6_trajectory_sim",
     "xarm7-trajectory-sim": "dimos.hardware.manipulators.xarm.xarm_blueprints:xarm7_trajectory_sim",
     "xarm-camera": "dimos.hardware.manipulators.xarm.xarm_blueprints:xarm_camera",
+    "xarm-dual-camera": "dimos.hardware.manipulators.xarm.xarm_blueprints:xarm_dual_camera",
     # xArm manipulation (driver + planner + controller)
     "xarm6-manipulation": "dimos.manipulation.manipulation_blueprints:xarm6_manipulation",
     "xarm7-manipulation": "dimos.manipulation.manipulation_blueprints:xarm7_manipulation",
