@@ -14,13 +14,12 @@
 
 """Eval generator module for creating fine-tuning datasets from DIMOS blueprints."""
 
-import json
-import uuid
 from datetime import datetime
+import json
 from pathlib import Path
 from typing import Any
+import uuid
 
-from dimos.agents.spec import ToolSchemaList
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -33,6 +32,7 @@ from dimos.agents.evals.prompts import (
     build_single_turn_prompt,
 )
 from dimos.agents.evals.schema_extractor import extract_skills_from_blueprint
+from dimos.agents.spec import ToolSchemaList
 from dimos.core.blueprints import ModuleBlueprintSet
 from dimos.core.module import Module
 from dimos.utils.logging_config import setup_logger
@@ -66,8 +66,16 @@ class EvalGenerator(Module):
         """Lazily initialize the LLM."""
         if self._llm is None:
             # Handle both enum and string types for model/provider
-            model = self.config.model.value if hasattr(self.config.model, "value") else self.config.model
-            provider = self.config.provider.value if hasattr(self.config.provider, "value") else self.config.provider
+            model = (
+                self.config.model.value
+                if hasattr(self.config.model, "value")
+                else self.config.model
+            )
+            provider = (
+                self.config.provider.value
+                if hasattr(self.config.provider, "value")
+                else self.config.provider
+            )
             self._llm = init_chat_model(
                 model_provider=provider,
                 model=model,
