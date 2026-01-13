@@ -216,36 +216,6 @@ xarm7_trajectory = autoconnect(
 )
 
 # =============================================================================
-# xArm6 Trajectory Simulation Blueprint
-# =============================================================================
-# Same as xarm_trajectory but using MuJoCo simulation instead of hardware.
-# =============================================================================
-
-xarm6_trajectory_sim = autoconnect(
-    xarm_driver(
-        ip="192.168.1.210",
-        dof=6,  # XArm6
-        has_gripper=False,
-        has_force_torque=False,
-        control_rate=100,
-        monitor_rate=10,
-        connection_type="sim",
-    ),
-    joint_trajectory_controller(
-        control_frequency=100.0,
-    ),
-).transports(
-    {
-        ("joint_state", JointState): LCMTransport("/xarm/joint_states", JointState),
-        ("robot_state", RobotState): LCMTransport("/xarm/robot_state", RobotState),
-        ("joint_position_command", JointCommand): LCMTransport(
-            "/xarm/joint_position_command", JointCommand
-        ),
-        ("trajectory", JointTrajectory): LCMTransport("/trajectory", JointTrajectory),
-    }
-)
-
-# =============================================================================
 # xArm Cartesian Control Blueprint (Driver + Controller)
 # =============================================================================
 # Combines XArmDriver with CartesianMotionController for Cartesian space control.
@@ -287,10 +257,8 @@ xarm_cartesian = autoconnect(
 
 __all__ = [
     "xarm5_servo",
-    "xarm6_trajectory_sim",
     "xarm7_servo",
     "xarm7_trajectory",
-    "xarm7_trajectory_sim",
     "xarm_cartesian",
     "xarm_servo",
     "xarm_trajectory",
