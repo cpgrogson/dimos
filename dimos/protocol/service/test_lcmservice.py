@@ -22,7 +22,6 @@ from dimos.protocol.service.lcmservice import (
     TARGET_MAX_DGRAM_SIZE_MACOS,
     TARGET_MAX_SOCKET_BUFFER_SIZE_MACOS,
     TARGET_RMEM_SIZE,
-    TARGET_RMEM_SIZE_MACOS,
     autoconf,
     check_buffers,
     check_multicast,
@@ -390,7 +389,7 @@ def test_check_buffers_macos_needs_config() -> None:
             sudo = get_sudo_prefix()
             expected = [
                 f"{sudo}sysctl -w kern.ipc.maxsockbuf={TARGET_MAX_SOCKET_BUFFER_SIZE_MACOS}",
-                f"{sudo}sysctl -w net.inet.udp.recvspace={TARGET_RMEM_SIZE_MACOS}",
+                f"{sudo}sysctl -w net.inet.udp.recvspace={TARGET_RMEM_SIZE}",
                 f"{sudo}sysctl -w net.inet.udp.maxdgram={TARGET_MAX_DGRAM_SIZE_MACOS}",
             ]
             assert commands == expected
