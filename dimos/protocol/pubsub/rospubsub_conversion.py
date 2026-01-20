@@ -25,7 +25,7 @@ It handles three categories of types:
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from dimos.msgs import DimosMsg
@@ -42,10 +42,10 @@ COMPLEX_TYPES: set[str] = {
 }
 
 # Cache for dynamic imports of dimos types
-_dimos_type_cache: dict[str, type | None] = {}
+_dimos_type_cache: dict[str, type[DimosMsg] | None] = {}
 
 # Cache for LCM type derivation
-_lcm_type_cache: dict[str, type] = {}
+_lcm_type_cache: dict[str, type[Any]] = {}
 
 # Field name mappings between ROS and LCM (ROS name -> LCM name)
 _ROS_TO_LCM_FIELD_MAP: dict[str, str] = {
@@ -56,7 +56,7 @@ _ROS_TO_LCM_FIELD_MAP: dict[str, str] = {
 _LCM_TO_ROS_FIELD_MAP: dict[str, str] = {v: k for k, v in _ROS_TO_LCM_FIELD_MAP.items()}
 
 
-def get_dimos_type(msg_name: str) -> type | None:
+def get_dimos_type(msg_name: str) -> type[DimosMsg] | None:
     """Try to import dimos.msgs type, return None if not found. Cached.
 
     Args:
@@ -71,7 +71,7 @@ def get_dimos_type(msg_name: str) -> type | None:
     try:
         package, name = msg_name.split(".")
         module = importlib.import_module(f"dimos.msgs.{package}.{name}")
-        dimos_type = getattr(module, name)
+        dimos_type = cast("type[DimosMsg]", getattr(module, name))
         _dimos_type_cache[msg_name] = dimos_type
         return dimos_type
     except (ImportError, AttributeError, ValueError):
@@ -79,7 +79,7 @@ def get_dimos_type(msg_name: str) -> type | None:
         return None
 
 
-def derive_lcm_type(dimos_type: type) -> type:
+def derive_lcm_type(dimos_type: type[DimosMsg]) -> type[Any]:
     """Derive the LCM message type from a dimos message type.
 
     Args:
@@ -99,12 +99,12 @@ def derive_lcm_type(dimos_type: type) -> type:
 
     package, message_name = parts
     lcm_module = importlib.import_module(f"dimos_lcm.{package}.{message_name}")
-    lcm_type = getattr(lcm_module, message_name)
+    lcm_type: type[Any] = getattr(lcm_module, message_name)
     _lcm_type_cache[msg_name] = lcm_type
     return lcm_type
 
 
-def derive_ros_type(dimos_type: type[DimosMsg]) -> type:
+def derive_ros_type(dimos_type: type[DimosMsg]) -> type[ROSMessage]:
     """Derive the ROS message type from a dimos message type.
 
     Args:
@@ -123,7 +123,7 @@ def derive_ros_type(dimos_type: type[DimosMsg]) -> type:
 
     package, message_name = parts
     ros_module = importlib.import_module(f"{package}.msg")
-    return getattr(ros_module, message_name)
+    return cast("type[ROSMessage]", getattr(ros_module, message_name))
 
 
 def _copy_ros_to_lcm_recursive(ros_msg: Any, lcm_msg: Any) -> None:
@@ -337,7 +337,7 @@ def _copy_fields_simple(src: Any, dst: Any) -> None:
                 pass
 
 
-def dimos_to_ros(msg: DimosMsg, ros_type: type) -> ROSMessage:
+def dimos_to_ros(msg: DimosMsg, ros_type: type[ROSMessage]) -> ROSMessage:
     """Convert a dimos message to a ROS message.
 
     For complex types (PointCloud2, Image, CameraInfo), uses LCM roundtrip

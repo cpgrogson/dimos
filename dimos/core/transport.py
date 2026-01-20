@@ -238,7 +238,7 @@ class ROSTransport(PubSubTransport[T]):
 
     def subscribe(self, callback: Callable[[T], None], selfstream: In[T] = None) -> None:  # type: ignore[assignment, override]
         ros = self._ensure_started()
-        return ros.subscribe(self.topic, lambda msg, topic: callback(msg))  # type: ignore[return-value]
+        return ros.subscribe(self.topic, lambda msg, topic: callback(msg))  # type: ignore[arg-type, return-value]
 
     def start(self) -> None:
         self._ensure_started()

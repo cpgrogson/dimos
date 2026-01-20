@@ -420,7 +420,8 @@ def to_list(value: Vector3 | np.ndarray | Sequence[int | float]) -> list[float]:
     if isinstance(value, Vector3):
         return value.to_list()
     elif isinstance(value, np.ndarray):
-        return value.tolist()
+        result: list[float] = value.tolist()
+        return result
     elif isinstance(value, list):
         return value
     else:
