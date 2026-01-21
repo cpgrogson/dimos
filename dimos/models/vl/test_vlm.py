@@ -1,3 +1,4 @@
+import os
 import time
 from typing import TYPE_CHECKING
 
@@ -5,7 +6,6 @@ from dimos_lcm.foxglove_msgs.ImageAnnotations import (
     ImageAnnotations,
 )
 import pytest
-import os
 
 from dimos.core import LCMTransport
 from dimos.models.vl.moondream import MoondreamVlModel

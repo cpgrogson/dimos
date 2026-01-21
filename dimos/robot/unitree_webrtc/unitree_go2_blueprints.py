@@ -45,7 +45,6 @@ from dimos.dashboard.tf_rerun_module import tf_rerun
 from dimos.mapping.costmapper import cost_mapper
 from dimos.mapping.voxels import voxel_mapper
 from dimos.msgs.geometry_msgs import PoseStamped
-from dimos.msgs.nav_msgs import OccupancyGrid
 from dimos.msgs.sensor_msgs import Image, PointCloud2
 from dimos.msgs.vision_msgs import Detection2DArray
 from dimos.navigation.frontier_exploration import (
