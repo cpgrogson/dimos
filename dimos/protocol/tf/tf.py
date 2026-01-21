@@ -334,6 +334,18 @@ class PubSubTF(MultiTBuffer, TFSpec):
     ) -> Transform | None:
         return super().get(parent_frame, child_frame, time_point, time_tolerance)
 
+    def get_pose(
+        self,
+        parent_frame: str,
+        child_frame: str,
+        time_point: float | None = None,
+        time_tolerance: float | None = None,
+    ):
+        tf = self.get(parent_frame, child_frame, time_point, time_tolerance)
+        if not tf:
+            return None
+        return tf.to_pose()
+
     def receive_msg(self, msg: TFMessage, topic: Topic) -> None:
         self.receive_tfmessage(msg)
 
