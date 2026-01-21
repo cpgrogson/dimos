@@ -169,7 +169,6 @@ class BackendHardwareInterface:
         """
         return self._backend.read_cartesian_position()
 
-
     def write_command(self, commands: dict[str, float], mode: ControlMode) -> bool:
         """Write commands - allows partial joint sets, holds last for missing.
 

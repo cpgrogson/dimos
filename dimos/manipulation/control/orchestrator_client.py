@@ -244,6 +244,24 @@ class OrchestratorClient:
 
         return generator.generate(waypoints)
 
+    def go_to_joint_positions(
+        self,
+        target_positions: list[float],
+        task_name: str | None = None,
+    ) -> bool:
+        """Move to target joint positions via trajectory."""
+        task = task_name or self._current_task
+
+        current = self.get_current_positions(task)
+        if current is None:
+            return False
+
+        waypoints = [current, target_positions]
+        trajectory = self.generate_trajectory(waypoints, task)
+        if trajectory is None:
+            return False
+        return self.execute_trajectory(task, trajectory)
+
     def set_velocity_limit(self, velocity: float, task_name: str | None = None) -> None:
         """Set max velocity for trajectory generation."""
         task = task_name or self._current_task

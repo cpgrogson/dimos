@@ -529,18 +529,7 @@ class ControlOrchestrator(Module[ControlOrchestratorConfig]):
 
     @rpc
     def set_streaming_positions(self, task_name: str, positions: list[float]) -> bool:
-        """Set joint positions for a streaming task.
-
-        Use this for real-time control (teleoperation, tracking, etc.)
-        instead of execute_trajectory().
-
-        Args:
-            task_name: Name of the streaming task
-            positions: Joint positions in radians
-
-        Returns:
-            True if accepted, False if task not found or wrong type
-        """
+        """Set joint positions for a streaming task."""
         with self._task_lock:
             task = self._tasks.get(task_name)
             if task is None:

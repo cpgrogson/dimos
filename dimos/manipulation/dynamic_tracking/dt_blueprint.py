@@ -14,7 +14,7 @@
 
 import cv2
 
-from dimos.control.blueprints import orchestrator_streaming_xarm6
+from dimos.control.blueprints import orchestrator_xarm6
 from dimos.core.blueprints import autoconnect
 from dimos.core.transport import LCMTransport
 from dimos.hardware.sensors.camera.realsense.camera import RealSenseCamera
@@ -83,19 +83,19 @@ aruco_tracker_realsense = (
 )
 
 # =============================================================================
-# ArUco Tracker with RealSense Camera + XArm6 Streaming Control
+# ArUco Tracker with RealSense Camera + XArm6 Trajectory Control
 # =============================================================================
-# Uses IK streaming instead of RPC for lower latency control.
-# ArucoTracker computes IK and streams joint positions to orchestrator.
+# Uses OrchestratorClient RPC to send trajectories for each tracking update.
+# ArucoTracker computes IK and sends joint trajectory via RPC.
 #
 # Data flow:
 #   RealSenseCamera ──► ArucoTracker (marker detection + IK)
-#   ArucoTracker.joint_command ──► ControlOrchestrator.joint_command (streaming)
+#   ArucoTracker ──► OrchestratorClient.go_to_joint_positions() ──► Orchestrator (RPC)
 # =============================================================================
 
 aruco_tracker_realsense_xarm6 = (
     autoconnect(
-        orchestrator_streaming_xarm6,
+        orchestrator_xarm6,
         RealSenseCamera.blueprint(
             width=848,
             height=480,
@@ -113,16 +113,18 @@ aruco_tracker_realsense_xarm6 = (
             marker_size=0.015,  # 15mm markers
             aruco_dict=cv2.aruco.DICT_4X4_50,
             camera_frame_id="camera_color_optical_frame",
-            rate=1,
+            rate=4,
             max_loops=10000,
             move_robot_to_aruco=True,
             move_robot_to_aruco_rotation=False,  # Fixed orientation for safety
             robot_connected=True,
             expected_marker_count=4,
-            # IK streaming config
+            # IK config
             mjcf_path=_XARM6_MJCF_PATH,
             ee_joint_id=6,
             hardware_id="arm",
+            task_name="traj_xarm",  # Task for OrchestratorClient trajectory execution
+            min_move_distance_m=0.005,  # Minimum EE movement (meters) to trigger trajectory
         ),
     )
     .transports(
@@ -135,8 +137,6 @@ aruco_tracker_realsense_xarm6 = (
             ("annotated_image", Image): LCMTransport("/aruco/annotated", Image),
             # Joint state from orchestrator (for IK warm-starting)
             ("joint_state", JointState): LCMTransport("/orchestrator/joint_state", JointState),
-            # Joint command streaming (ArucoTracker -> Orchestrator)
-            ("joint_command", JointState): LCMTransport("/orchestrator/joint_command", JointState),
         }
     )
     .global_config(viewer_backend="rerun-native")

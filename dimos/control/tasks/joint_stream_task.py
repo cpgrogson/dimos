@@ -23,8 +23,8 @@ CRITICAL: Uses t_now from OrchestratorState, never calls time.time()
 
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
+import threading
 
 from dimos.control.task import (
     ControlMode,
@@ -96,9 +96,7 @@ class JointStreamTask(ControlTask):
         self._last_update_time: float = 0.0
         self._active = False
 
-        logger.info(
-            f"JointStreamTask {name} initialized for joints: {config.joint_names}"
-        )
+        logger.info(f"JointStreamTask {name} initialized for joints: {config.joint_names}")
 
     @property
     def name(self) -> str:

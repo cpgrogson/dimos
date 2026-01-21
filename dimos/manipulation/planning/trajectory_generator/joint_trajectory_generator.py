@@ -54,8 +54,8 @@ class JointTrajectoryGenerator:
     def __init__(
         self,
         num_joints: int = 6,
-        max_velocity: list[float] | float = 1.0,
-        max_acceleration: list[float] | float = 2.0,
+        max_velocity: list[float] | float = 0.5,
+        max_acceleration: list[float] | float = 1.0,
         points_per_segment: int = 50,
     ) -> None:
         """

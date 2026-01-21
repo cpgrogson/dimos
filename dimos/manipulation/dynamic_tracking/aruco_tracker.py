@@ -13,26 +13,25 @@
 # limitations under the License.
 
 from dataclasses import dataclass
+import math
 from threading import Event, Thread
 import time
 from typing import Any
 
 import cv2
 import numpy as np
-import pinocchio
 import rerun as rr
 from scipy.spatial.transform import Rotation
 
 from dimos.core import In, Module, ModuleConfig, Out, rpc
-from dimos.core.rpc_client import RpcCall
 from dimos.dashboard.rerun_init import connect_rerun
+from dimos.manipulation.control.orchestrator_client import OrchestratorClient
 from dimos.manipulation.pinocchio.pin_kinematics import PinocchioIK
-from dimos.msgs.geometry_msgs import Quaternion, Transform, Vector3
+from dimos.msgs.geometry_msgs import Pose, Quaternion, Transform, Vector3
 from dimos.msgs.sensor_msgs import JointState
 from dimos.msgs.sensor_msgs.CameraInfo import CameraInfo
-from dimos.msgs.sensor_msgs.Image import Image
+from dimos.msgs.sensor_msgs.Image import Image, ImageFormat
 from dimos.utils.logging_config import setup_logger
-from dimos.utils.transform_utils import euler_to_quaternion
 
 logger = setup_logger()
 
@@ -51,14 +50,13 @@ class ArucoTrackerConfig(ModuleConfig):
         False  # Whether to follow ArUco rotation (False = fixed orientation)
     )
     safety_max_joint_delta_deg: float = 15.0  # Max allowed joint angle change (degrees) per command
-    hardware_id: str = "arm"  # Hardware ID for ControlOrchestrator EE pose lookup
-    robot_connected: bool = True  # Whether robot is connected (False = use dummy EE transform)
-    expected_marker_count: int = 4  # Expected number of ArUco markers (±1 tolerance)
+    expected_marker_count: int = 4  # Expected number of ArUco markers
 
-    # IK streaming config
+    # IK config
     mjcf_path: str = ""  # Path to MJCF file for IK solver (required)
     ee_joint_id: int = 6  # End-effector joint ID in the kinematic chain
-    joint_names: list[str] | None = None  # Joint names for JointState message
+    task_name: str = "traj_arm"  # Task name for OrchestratorClient trajectory execution
+    min_move_distance_m: float = 0.003  # Minimum EE movement (meters) to trigger trajectory
 
 
 class ArucoTracker(Module[ArucoTrackerConfig]):
@@ -68,16 +66,15 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
     Subscribes to camera images and camera info, detects ArUco markers,
     and publishes their transforms relative to the camera frame.
 
-    Uses Pinocchio IK to compute joint angles from target EE pose and streams
-    joint positions via Out[JointState] to the ControlOrchestrator.
+    Uses Pinocchio IK to compute joint angles from target EE pose and sends
+    joint positions via OrchestratorClient to the ControlOrchestrator.
     """
 
     # Transport ports
     color_image: In[Image]
     camera_info: In[CameraInfo]
-    joint_state: In[JointState]  # Current joint positions from orchestrator
+    joint_state: In[JointState]  # Current joint positions from orchestrator (for IK warm-start)
     annotated_image: Out[Image]
-    joint_command: Out[JointState]  # Streamed joint positions for orchestrator
 
     config: ArucoTrackerConfig
     default_config = ArucoTrackerConfig
@@ -95,16 +92,11 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
         self._dist_coeffs: np.ndarray | None = None
         self._latest_image: Image | None = None
 
-        # Threading for processing loop
         self._stop_event = Event()
         self._processing_thread: Thread | None = None
         self._loop_count = 0
 
-        # RPC call for reading EE positions
-        self._get_ee_positions_rpc: RpcCall | None = None
-
-        # IK solver for computing joint angles from EE pose
-        # Will be initialized from actual robot joint positions via joint_state subscription
+        self._orchestrator_client = OrchestratorClient()
         self._last_q: np.ndarray | None = None
 
         if not self.config.mjcf_path:
@@ -125,6 +117,10 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
         self._disposables.add(self.color_image.observable().subscribe(self._store_latest_image))
         self._disposables.add(self.joint_state.observable().subscribe(self._update_joint_state))
 
+        # Setup OrchestratorClient for the configured task
+        if not self._orchestrator_client.select_task(self.config.task_name):
+            logger.warning(f"Failed to select task '{self.config.task_name}' in OrchestratorClient")
+
         self._loop_count = 0
         self._stop_event.clear()
         self._processing_thread = Thread(
@@ -136,9 +132,10 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
     def stop(self) -> None:
         """Stop the ArUco tracker."""
         self._stop_event.set()
-
         if self._processing_thread is not None and self._processing_thread.is_alive():
             self._processing_thread.join(timeout=2.0)
+        # Cleanup OrchestratorClient
+        self._orchestrator_client.stop()
         super().stop()
 
     def _store_latest_image(self, image: Image) -> None:
@@ -159,33 +156,26 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
         if joint_state.position:
             self._last_q = np.array(joint_state.position)
 
-    @rpc
-    def set_ControlOrchestrator_get_ee_positions(self, rpc_call: RpcCall) -> None:
-        """Wire get_ee_positions RPC from ControlOrchestrator."""
-        self._get_ee_positions_rpc = rpc_call
-        self._get_ee_positions_rpc.set_rpc(self.rpc)
-
-
     def _log_transform_to_rerun(self, transform: Transform) -> None:
-        """Log a transform to Rerun without named frame references (avoids duplicate entries)."""
-        rr.log(
-            f"world/tf/{transform.child_frame_id}",
-            rr.Transform3D(
-                translation=[
-                    transform.translation.x,
-                    transform.translation.y,
-                    transform.translation.z,
-                ],
-                rotation=rr.Quaternion(
-                    xyzw=[
-                        transform.rotation.x,
-                        transform.rotation.y,
-                        transform.rotation.z,
-                        transform.rotation.w,
-                    ]
-                ),
-            ),
-        )
+        """Log a transform to Rerun."""
+        rr.log(f"world/tf/{transform.child_frame_id}", transform.to_rerun())
+
+    def _check_joint_safety(self, q_solution: np.ndarray) -> bool:
+        """Check if joint movement is within safety limits"""
+        q_new = q_solution.flatten()
+        q_old = self._last_q.flatten()
+        joint_deltas_deg = np.abs(np.degrees(q_new - q_old))
+        max_delta_deg = np.max(joint_deltas_deg)
+        logger.debug(f"IK solution (deg): {[f'{np.degrees(angle):.1f}' for angle in q_new]}")
+
+        if max_delta_deg > self.config.safety_max_joint_delta_deg:
+            max_joint_idx = np.argmax(joint_deltas_deg)
+            logger.error(
+                f"Safety check failed: joint {max_joint_idx + 1} delta {max_delta_deg:.1f}° "
+                f"exceeds limit {self.config.safety_max_joint_delta_deg:.1f}°"
+            )
+            return False
+        return True
 
     def _processing_loop(self) -> None:
         """Processing loop that runs at the configured rate."""
@@ -198,22 +188,17 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
                 if self._latest_image is None:
                     time.sleep(period)
                     continue
-
                 self._process_image(self._latest_image)
                 self._loop_count += 1
                 logger.debug(f"Processed image {self._loop_count}/{self.config.max_loops}")
-
             except Exception as e:
                 logger.error(f"Error in processing loop: {e}")
 
-            # Sleep for the remainder of the period
             elapsed = time.time() - loop_start
-            logger.debug(f"Processing loop took {elapsed:.3f}s")
             sleep_time = period - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
         logger.info(f"ArUco processing loop completed after {self._loop_count} iterations")
-
 
     def _process_image(self, image: Image) -> None:
         """Process image to detect ArUco markers and average their poses."""
@@ -230,51 +215,24 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
         else:
             display_image = image.data.copy()
             gray = image.data
-
         corners, ids, _ = self._detector.detectMarkers(gray)
-        # If no markers detected, publish bare frame and return
-        if ids is None or len(ids) == 0:
-            logger.debug("No ArUco markers detected")
-            self._publish_annotated_image(display_image, image.format.name)
-            return
 
-        num_detected = len(ids)
-        expected = self.config.expected_marker_count
-        # Check if detected count is within ±1 of expected
-        if abs(num_detected - expected) > 1:
-            logger.error(
-                f"Detected {num_detected} ArUco markers, expected {expected} (±1 tolerance)"
+        # Check marker count
+        num_detected = 0 if ids is None else len(ids)
+        if num_detected != self.config.expected_marker_count:
+            logger.debug(
+                f"Detected {num_detected} markers, expected {self.config.expected_marker_count}"
             )
             self._publish_annotated_image(display_image, image.format.name)
             return
-        # Estimate pose for all detected markers
+
+        # Estimate and average marker poses
         rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(
             corners, self.config.marker_size, self._camera_matrix, self._dist_coeffs
         )
+        avg_position, avg_quat = self._average_marker_poses(rvecs, tvecs)
 
-        # Collect all rotations and positions for averaging
-        rotations = []
-        positions = []
-        for i in range(num_detected):
-            rvec = rvecs[i][0]
-            tvec = tvecs[i][0]
-            rot_matrix, _ = cv2.Rodrigues(rvec)
-            rotations.append(Rotation.from_matrix(rot_matrix))
-            positions.append(tvec)
-
-        # Average position (simple mean)
-        avg_position = np.mean(positions, axis=0)
-
-        # Average rotation using scipy's mean (proper quaternion averaging)
-        avg_rotation = Rotation.concatenate(rotations).mean()
-        avg_quat = avg_rotation.as_quat()  # [x, y, z, w]
-
-        logger.debug(
-            f"Averaged {num_detected} markers: pos=({avg_position[0]:.3f}, {avg_position[1]:.3f}, {avg_position[2]:.3f})"
-        )
-
-        # Create and publish transforms using averaged pose
-        # Use "aruco_avg" as the frame ID for the averaged marker
+        # Create and publish transforms
         transform = self._set_transforms("avg", avg_position, avg_quat, image.ts)
         if transform is None:
             logger.error("Failed to create transform")
@@ -282,17 +240,14 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
             return
 
         aruco_wrt_robot_base = self.tf.get("base_link", "aruco_avg")
-        if aruco_wrt_robot_base is not None:
-            aruco_rpy = aruco_wrt_robot_base.rotation.to_euler()
-            logger.debug(
-                f"ArUco (avg) wrt base_link: x={aruco_wrt_robot_base.translation.x:.3f}, y={aruco_wrt_robot_base.translation.y:.3f}, z={aruco_wrt_robot_base.translation.z:.3f}, "
-                f"roll={aruco_rpy.x:.3f}, pitch={aruco_rpy.y:.3f}, yaw={aruco_rpy.z:.3f}"
-            )
-        else:
-            logger.error("Failed to lookup aruco_avg wrt base_link")
+        if aruco_wrt_robot_base is None:
+            logger.error("Failed to get aruco_avg wrt base_link")
+            self._publish_annotated_image(display_image, image.format.name)
+            return
 
-        if aruco_wrt_robot_base is not None:
-            self._move_to_aruco(aruco_wrt_robot_base)
+        reach_pose = self._compute_reach_pose(aruco_wrt_robot_base)
+        if reach_pose is not None:
+            self._send_joint_command(reach_pose)
 
         # Draw markers on display image (show all detected markers)
         self._draw_markers(
@@ -304,126 +259,79 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
             image.format.name,
         )
 
-
-
-    def _move_to_aruco(self, aruco_wrt_robot_base: Transform) -> None:
-        """Move the robot to the ArUco marker position with offset."""
-        import math
-
-        # Calculate reach pose: position offset
-        reach_x = aruco_wrt_robot_base.translation.x - 0.05  # 5cm offset in x
-        reach_y = aruco_wrt_robot_base.translation.y
-        reach_z = aruco_wrt_robot_base.translation.z + 0.20  # 20cm offset in z
-
-        # Always compute rotation values for logging
-        aruco_rpy = aruco_wrt_robot_base.rotation.to_euler()
-        aruco_roll = aruco_rpy.x
-        aruco_pitch = aruco_rpy.y
-        aruco_yaw = aruco_rpy.z
-
-        # Map ArUco orientation to robot EE orientation
-        # ArUco home: roll=0, pitch=0, yaw≈-π/2 -> Robot home: roll=π, pitch=0, yaw=0
-        # Robot roll = π + ArUco roll (wrap to ±π)
-        computed_roll = math.pi + aruco_roll
-        if computed_roll > math.pi:
-            computed_roll -= 2 * math.pi
-        elif computed_roll < -math.pi:
-            computed_roll += 2 * math.pi
-
-        # Robot pitch = ArUco pitch (clamp to ±π/2)
-        computed_pitch = max(-math.pi / 2, min(math.pi / 2, aruco_pitch))
-
-        # Robot yaw = ArUco yaw + π/2 (offset from -π/2 home, clamp to ±π/2)
-        computed_yaw = aruco_yaw + math.pi / 2
-        computed_yaw = max(-math.pi / 2, min(math.pi / 2, computed_yaw))
-
-        # Log computed rotation values
-        logger.debug(
-            f"Computed rotation: roll={computed_roll:.3f}, pitch={computed_pitch:.3f}, yaw={computed_yaw:.3f}"
-        )
-
-        # Use computed rotation or fixed default based on config
-        if self.config.move_robot_to_aruco_rotation:
-            reach_roll = computed_roll
-            reach_pitch = computed_pitch
-            reach_yaw = computed_yaw
-        else:
-            # Use fixed default orientation (robot home: roll=π, pitch=0, yaw=0)
-            reach_roll = math.pi
-            reach_pitch = 0.0
-            reach_yaw = 0.0
-
-        logger.debug(
-            f"Reach pose: x={reach_x:.3f}, y={reach_y:.3f}, z={reach_z:.3f}, "
-            f"roll={reach_roll:.3f}, pitch={reach_pitch:.3f}, yaw={reach_yaw:.3f}"
-        )
-
+    def _compute_reach_pose(self, aruco_wrt_robot_base: Transform) -> Pose | None:
+        """Compute the reach pose from ArUco marker position with offset."""
         if not self.config.move_robot_to_aruco:
-            logger.info("move_robot_to_aruco is False, skipping move command")
-            return
-        # Compute IK and stream joint command
-        self._stream_joint_command(reach_x, reach_y, reach_z, reach_roll, reach_pitch, reach_yaw)
+            return None
+
+        # Position with offset
+        t = aruco_wrt_robot_base.translation
+        position = Vector3(t.x - 0.05, t.y, t.z + 0.20)
+
+        # Rotation: follow ArUco or use fixed default
+        if self.config.move_robot_to_aruco_rotation:
+            rpy = aruco_wrt_robot_base.rotation.to_euler()
+            roll = ((rpy.x + math.pi + math.pi) % (2 * math.pi)) - math.pi  # wrap to [-π, π]
+            pitch = np.clip(rpy.y, -math.pi / 2, math.pi / 2)
+            yaw = np.clip(rpy.z + math.pi / 2, -math.pi / 2, math.pi / 2)
+            orientation = Quaternion.from_euler(Vector3(roll, pitch, yaw))
+        else:
+            orientation = Quaternion.from_euler(Vector3(math.pi, 0.0, 0.0))
+
+        pose = Pose(position=position, orientation=orientation)
+        logger.debug(f"Reach pose: {pose}")
+        return pose
+
+    def _average_marker_poses(
+        self, rvecs: np.ndarray, tvecs: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Average multiple marker poses into a single pose."""
+        rotations = []
+        positions = []
+        for i in range(len(rvecs)):
+            rot_matrix, _ = cv2.Rodrigues(rvecs[i][0])
+            rotations.append(Rotation.from_matrix(rot_matrix))
+            positions.append(tvecs[i][0])
+
+        avg_position = np.mean(positions, axis=0)
+        avg_rotation = Rotation.concatenate(rotations).mean()
+        avg_quat = avg_rotation.as_quat()  # [x, y, z, w]
+        return avg_position, avg_quat
 
 
-
-    def _stream_joint_command(
-        self, x: float, y: float, z: float, roll: float, pitch: float, yaw: float
-    ) -> None:
-        """Compute IK and stream joint positions via Out[JointState]."""
-        # Wait for joint state from robot before computing IK
+    def _send_joint_command(self, goal_pose: Pose) -> None:
+        """Compute IK and send joint positions via OrchestratorClient trajectory."""
         if self._last_q is None:
             logger.warning("No joint state received yet, skipping IK command")
             return
 
-        # Build target pose for IK
-        position = np.array([x, y, z])
-        rotation = pinocchio.rpy.rpyToMatrix(roll, pitch, yaw)
-        target_pose = pinocchio.SE3(rotation, position)
-
-        # Solve IK (warm-start with last solution from robot)
-        q_solution, success = self._ik_solver.solve_ik(target_pose, q_init=self._last_q)
-
+        # Solve IK
+        q_solution, success = self._ik_solver.solve_ik_from_pose(goal_pose, self._last_q)
         if not success:
             logger.warning("IK did not converge, skipping command")
             return
-
-        # Safety check: ensure no joint moves more than the configured limit
-        q_new = q_solution.flatten()
-        q_old = self._last_q.flatten()
-        joint_deltas_deg = np.abs(np.degrees(q_new - q_old))    
-        max_delta_deg = np.max(joint_deltas_deg)
-
-        logger.debug(f"inv kinematics solution (deg): {[f'{np.degrees(angle):.1f}' for angle in q_new]}")
-
-        if max_delta_deg > self.config.safety_max_joint_delta_deg:
-            max_joint_idx = np.argmax(joint_deltas_deg)
-            logger.error(
-                f"Safety check failed: joint {max_joint_idx + 1} delta {max_delta_deg:.1f}° "
-                f"exceeds limit {self.config.safety_max_joint_delta_deg:.1f}°"
-            )
+        if not self._check_joint_safety(q_solution):
             return
 
-        # Build joint names
-        joint_names = self.config.joint_names
-        if joint_names is None:
-            # Default joint names based on hardware_id
-            num_joints = len(q_solution.flatten())
-            joint_names = [f"{self.config.hardware_id}_joint{i + 1}" for i in range(num_joints)]
+        # Skip if movement is too small
+        current_ee_pose = self._ik_solver.forward_kinematics(self._last_q)
+        goal_position = np.array([goal_pose.x, goal_pose.y, goal_pose.z])
+        distance = np.linalg.norm(goal_position - current_ee_pose.translation)
+        if distance < self.config.min_move_distance_m:
+            logger.debug(f"Movement too small ({distance * 1000:.1f}mm), skipping")
+            return
 
-        # Create and publish JointState message
+        # Send joint command via OrchestratorClient
         joint_positions = q_solution.flatten().tolist()
-        msg = JointState(
-            ts=time.time(),
-            frame_id="aruco_tracker",
-            name=joint_names,
-            position=joint_positions,
-            velocity=[],
-            effort=[],
+        success = self._orchestrator_client.go_to_joint_positions(
+            joint_positions, self.config.task_name
         )
-        self.joint_command.publish(msg)
 
-        logger.debug(f"Streamed joint command: {[f'{p:.3f}' for p in joint_positions]}")
-
+        # success return if trajectory was sent
+        if success:
+            logger.debug(f"Sent trajectory to {[f'{p:.3f}' for p in joint_positions]}")
+        else:
+            logger.warning("Failed to send trajectory via OrchestratorClient")
 
 
     def _set_transforms(
@@ -437,8 +345,6 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
             child_frame_id=f"aruco_{marker_id}",
             ts=timestamp,
         )
-
-        # Publish ArUco marker transform to TF buffer (for graph lookups)
         self.tf.publish(aruco_transform)
         self._log_transform_to_rerun(aruco_transform)
 
@@ -453,56 +359,28 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
         self.tf.publish(robot_base_to_world_transform)
         self._log_transform_to_rerun(robot_base_to_world_transform)
 
-        if self.config.robot_connected and self._get_ee_positions_rpc is not None:
-            # Get EE pose from ControlOrchestrator via RPC
-            try:
-                ee_positions = self._get_ee_positions_rpc()
-                if ee_positions is not None:
-                    hw_pose = ee_positions.get(self.config.hardware_id)
-                    if hw_pose is not None:
-                        x, y, z = hw_pose["x"], hw_pose["y"], hw_pose["z"]
-                        roll, pitch, yaw = hw_pose["roll"], hw_pose["pitch"], hw_pose["yaw"]
-                        orientation = euler_to_quaternion(Vector3(roll, pitch, yaw))
-                        ee_transform = Transform(
-                            translation=Vector3(float(x), float(y), float(z)),
-                            rotation=orientation,
-                            frame_id="base_link",
-                            child_frame_id="ee_link",
-                            ts=timestamp,
-                        )
-                        self.tf.publish(ee_transform)
-                        self._log_transform_to_rerun(ee_transform)
-                    else:
-                        logger.warning(f"No EE pose for hardware_id '{self.config.hardware_id}'")
-            except Exception as e:
-                logger.error(f"Error getting EE pose from ControlOrchestrator: {e}")
-        else:
-            import math
-
-            orientation = euler_to_quaternion(Vector3(math.pi, 0.0, 0.0))
+        # Get EE pose from forward kinematics
+        if self._last_q is not None:
+            ee_se3 = self._ik_solver.forward_kinematics(self._last_q)
             ee_transform = Transform(
-                translation=Vector3(0.4, 0.0, 0.4),
-                rotation=orientation,
+                translation=Vector3(*ee_se3.translation),
+                rotation=Quaternion.from_rotation_matrix(ee_se3.rotation),
                 frame_id="base_link",
                 child_frame_id="ee_link",
                 ts=timestamp,
             )
             self.tf.publish(ee_transform)
             self._log_transform_to_rerun(ee_transform)
-
         return aruco_transform
-
 
 
     def _publish_annotated_image(self, display_image: np.ndarray, image_format: str) -> None:
         """Publish the annotated image to subscribers and Rerun."""
-        from dimos.msgs.sensor_msgs.Image import ImageFormat
 
         if image_format == "BGR":
             publish_image = cv2.cvtColor(display_image, cv2.COLOR_BGR2RGB)
         else:
             publish_image = display_image
-
         annotated_msg = Image(
             data=publish_image,
             format=ImageFormat.RGB,
@@ -511,6 +389,7 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
         )
         self.annotated_image.publish(annotated_msg)
         rr.log("aruco/annotated", rr.Image(publish_image))
+
 
     def _draw_markers(
         self,
@@ -539,10 +418,8 @@ class ArucoTracker(Module[ArucoTrackerConfig]):
                 tvec,
                 axis_length,
             )
-
         self._publish_annotated_image(display_image, image_format)
 
 
 aruco_tracker = ArucoTracker.blueprint
-
 __all__ = ["ArucoTracker", "ArucoTrackerConfig", "aruco_tracker"]

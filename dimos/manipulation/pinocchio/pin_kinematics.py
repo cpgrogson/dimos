@@ -12,9 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 from numpy.linalg import norm, solve
 import pinocchio
+
+if TYPE_CHECKING:
+    from dimos.msgs.geometry_msgs import Pose
 
 
 class PinocchioIK:
@@ -83,6 +88,21 @@ class PinocchioIK:
         rotation = pinocchio.rpy.rpyToMatrix(roll, pitch, yaw)
         target_pose = pinocchio.SE3(rotation, position)
         return self.solve_ik(target_pose, q_init, verbose)
+
+    def pose_to_se3(self, pose: "Pose") -> pinocchio.SE3:
+        """Convert a Pose to pinocchio SE3."""
+        position = np.array([pose.x, pose.y, pose.z])
+        rotation = pinocchio.rpy.rpyToMatrix(pose.roll, pose.pitch, pose.yaw)
+        return pinocchio.SE3(rotation, position)
+
+    def solve_ik_from_pose(
+        self,
+        goal_pose: "Pose",
+        q_current: np.ndarray,
+    ) -> tuple[np.ndarray | None, bool]:
+        """Solve IK for a goal Pose, using current joint state as warm-start."""
+        target_se3 = self.pose_to_se3(goal_pose)
+        return self.solve_ik(target_se3, q_init=q_current)
 
 
 if __name__ == "__main__":
