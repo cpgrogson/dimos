@@ -561,18 +561,15 @@ class SDK2MirrorController:
             _SportModeState_default,
         ) = _get_idl_types(config.robot_type)
 
-        # DDS
-        ChannelFactoryInitialize(config.domain_id, config.interface)
-        self._state_sub = ChannelSubscriber(TOPIC_LOWSTATE, self.LowState_)
-        self._state_sub.Init(self._lowstate_callback, 10)
-        self._sport_sub = ChannelSubscriber(TOPIC_SPORTMODESTATE, self.SportModeState_)
-        self._sport_sub.Init(self._sportstate_callback, 10)
-
         # Buffers (motor order)
         import numpy as np
 
         if config.robot_type != "g1":
             raise NotImplementedError("SDK2MirrorController currently supports robot_type='g1' only")
+
+        # The DDS ChannelSubscriber spins its own reader thread. Create the lock + buffers
+        # BEFORE calling .Init(...) to avoid a race where the callback fires immediately.
+        self._data_lock = threading.Lock()
 
         self._num_motors = len(G1_MOTOR_JOINT_NAMES)
         self._joint_pos = np.zeros(self._num_motors, dtype=np.float32)
@@ -581,7 +578,12 @@ class SDK2MirrorController:
         self._base_ang_vel = np.zeros(3, dtype=np.float32)
         self._state_received = False
 
-        self._data_lock = threading.Lock()
+        # DDS
+        ChannelFactoryInitialize(config.domain_id, config.interface)
+        self._state_sub = ChannelSubscriber(TOPIC_LOWSTATE, self.LowState_)
+        self._state_sub.Init(self._lowstate_callback, 10)
+        self._sport_sub = ChannelSubscriber(TOPIC_SPORTMODESTATE, self.SportModeState_)
+        self._sport_sub.Init(self._sportstate_callback, 10)
 
         # Map motor_idx -> qposadr/qveladr (by joint name)
         self._motor_qposadr: list[int] = []
