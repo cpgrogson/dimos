@@ -22,13 +22,12 @@ Usage:
 Then open http://localhost:8080 in your browser.
 """
 
-import json
 from pathlib import Path
 import sys
 from threading import Lock
 import time
 
-from flask import Flask, jsonify, render_template_string, request
+from flask import Flask, jsonify, render_template_string
 
 from dimos.perception.experimental.temporal_memory.entity_graph_db import EntityGraphDB
 
@@ -151,94 +150,6 @@ HTML_TEMPLATE = """
         .legend-label {
             font-size: 12px;
         }
-        .query-section {
-            margin-top: 10px;
-        }
-        .query-input {
-            width: 100%;
-            padding: 6px 8px;
-            background: #ffffff;
-            border: 1px solid #d0d7de;
-            color: #24292f;
-            border-radius: 4px;
-            margin-bottom: 6px;
-            font-size: 12px;
-        }
-        .query-input:focus {
-            outline: none;
-            border-color: #0969da;
-        }
-        .query-input::placeholder {
-            color: #656d76;
-        }
-        .query-btn {
-            width: 100%;
-            padding: 6px 8px;
-            background: #1a7f37;
-            border: 1px solid #1a7f37;
-            color: #ffffff;
-            cursor: pointer;
-            border-radius: 4px;
-            font-weight: 500;
-            font-size: 12px;
-            transition: background 0.15s;
-        }
-        .query-btn:hover {
-            background: #2da44e;
-        }
-        .query-btn:disabled {
-            background: #f6f8fa;
-            border-color: #d0d7de;
-            color: #656d76;
-            cursor: not-allowed;
-        }
-        .query-response {
-            margin-top: 8px;
-            padding: 8px;
-            background: #ffffff;
-            border-radius: 4px;
-            font-size: 11px;
-            line-height: 1.5;
-            max-height: 200px;
-            overflow-y: auto;
-            border: 1px solid #d0d7de;
-        }
-        .query-response::-webkit-scrollbar {
-            width: 6px;
-        }
-        .query-response::-webkit-scrollbar-track {
-            background: #f6f8fa;
-        }
-        .query-response::-webkit-scrollbar-thumb {
-            background: #d0d7de;
-            border-radius: 3px;
-        }
-        .query-item {
-            margin-bottom: 8px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid #d0d7de;
-        }
-        .query-item:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-            padding-bottom: 0;
-        }
-        .query-question {
-            color: #0969da;
-            font-weight: 600;
-            margin-bottom: 4px;
-            font-size: 11px;
-        }
-        .query-answer {
-            color: #24292f;
-            line-height: 1.4;
-            font-size: 11px;
-        }
-        .query-error {
-            color: #cf222e;
-            font-weight: 500;
-            font-size: 11px;
-        }
         #sidebar::-webkit-scrollbar {
             width: 6px;
         }
@@ -338,12 +249,6 @@ HTML_TEMPLATE = """
                     <div style="width: 20px; height: 2px; border-top: 2px dashed #27ae60; margin-right: 8px;"></div>
                     <div class="legend-label">Distances</div>
                 </div>
-            </div>
-            <div class="toggle-group query-section">
-                <h3>Ask Questions</h3>
-                <input type="text" class="query-input" id="query-input" placeholder="Ask about the video..." />
-                <button class="query-btn" id="query-btn">Ask</button>
-                <div class="query-response" id="query-response" style="display: none;"></div>
             </div>
         </div>
     </div>
@@ -641,61 +546,6 @@ HTML_TEMPLATE = """
             poll();
         });
 
-        // Query functionality
-        const queryInput = document.getElementById('query-input');
-        const queryBtn = document.getElementById('query-btn');
-        const queryResponse = document.getElementById('query-response');
-        const queryHistory = [];
-
-        function addQueryToHistory(question, answer, error) {
-            queryHistory.push({ question, answer, error, timestamp: new Date() });
-            if (queryHistory.length > 10) queryHistory.shift();
-
-            queryResponse.innerHTML = queryHistory.map(item => {
-                if (item.error) {
-                    return `<div class="query-item"><div class="query-question">Q: ${item.question}</div><div class="query-error">Error: ${item.error}</div></div>`;
-                }
-                return `<div class="query-item"><div class="query-question">Q: ${item.question}</div><div class="query-answer">A: ${item.answer}</div></div>`;
-            }).reverse().join('');
-            queryResponse.style.display = queryHistory.length > 0 ? 'block' : 'none';
-        }
-
-        async function submitQuery() {
-            const question = queryInput.value.trim();
-            if (!question) return;
-
-            queryBtn.disabled = true;
-            queryBtn.textContent = 'Asking...';
-            queryInput.disabled = true;
-
-            try {
-                const res = await fetch('/api/query', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question })
-                });
-                const data = await res.json();
-
-                if (data.error) {
-                    addQueryToHistory(question, null, data.error);
-                } else {
-                    addQueryToHistory(question, data.answer, null);
-                }
-            } catch (e) {
-                addQueryToHistory(question, null, e.message);
-            } finally {
-                queryBtn.disabled = false;
-                queryBtn.textContent = 'Ask';
-                queryInput.disabled = false;
-                queryInput.value = '';
-            }
-        }
-
-        queryBtn.addEventListener('click', submitQuery);
-        queryInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') submitQuery();
-        });
-
         // Poll for updates every 1 second (reduced from 500ms for smoother experience)
         async function poll() {
             try {
@@ -739,27 +589,6 @@ def _try_init_db() -> bool:
         except Exception as e:
             print(f"Warning: Failed to initialize database: {e}")
             return False
-
-
-def _query_running_temporal_memory(question: str) -> str:
-    """Query the running TemporalMemory instance via HTTP."""
-    try:
-        import requests
-
-        response = requests.post(
-            "http://127.0.0.1:8081/api/query", json={"question": question}, timeout=30
-        )
-        if response.status_code == 200:
-            return response.json().get("answer", "No answer")
-        else:
-            error_msg = response.json().get("error", "Unknown error")
-            return f"Error: {error_msg}"
-    except requests.exceptions.ConnectionError:
-        return "Error: Could not connect to running TemporalMemory. Make sure video_temporal_example.py is running."
-    except requests.exceptions.Timeout:
-        return "Error: Query timed out. The TemporalMemory instance may be busy."
-    except Exception as e:
-        return f"Error: {e}"
 
 
 @app.route("/api/graph")
@@ -816,22 +645,6 @@ def get_graph():
                 "waiting": False,
             }
         )
-
-
-@app.route("/api/query", methods=["POST"])
-def query():
-    """Query the temporal memory via the running video example."""
-    data = request.get_json()
-    if not data or "question" not in data:
-        return jsonify({"error": "Missing 'question' field"}), 400
-
-    question = data["question"]
-    try:
-        # Query the running TemporalMemory instance
-        answer = _query_running_temporal_memory(question)
-        return jsonify({"answer": answer, "question": question})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
 
 
 def main() -> None:
