@@ -30,13 +30,14 @@ from dimos.simulation.engines import EngineType, get_engine
 from dimos.simulation.manipulators.sim_manip_interface import SimManipInterface
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 
 @dataclass(kw_only=True)
 class SimulationModuleConfig(ModuleConfig):
     engine: EngineType
-    config_path: Path
+    config_path: Path | Callable[[], Path]
     headless: bool = False
 
 
@@ -68,8 +69,13 @@ class SimulationModule(Module[SimulationModuleConfig]):
 
     def _create_backend(self) -> SimManipInterface:
         engine_cls = get_engine(self.config.engine)
+        config_path = (
+            self.config.config_path()
+            if callable(self.config.config_path)
+            else self.config.config_path
+        )
         engine = engine_cls(
-            config_path=self.config.config_path,
+            config_path=config_path,
             headless=self.config.headless,
         )
         return SimManipInterface(engine=engine)

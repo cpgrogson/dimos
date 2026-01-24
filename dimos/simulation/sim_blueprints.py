@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
+
 from dimos.core.blueprints import autoconnect
 from dimos.core.transport import LCMTransport
 from dimos.msgs.sensor_msgs import (  # type: ignore[attr-defined]
@@ -25,7 +27,7 @@ from dimos.utils.data import get_data
 
 xarm7_trajectory_sim = simulation(
     engine="mujoco",
-    config_path=get_data("xarm7") / "scene.xml",
+    config_path=lambda: get_data("xarm7") / "scene.xml",
     headless=True,
 ).transports(
     {
