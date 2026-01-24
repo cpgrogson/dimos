@@ -45,7 +45,7 @@ Core Features:
   test dimensional applications in real-time. Control your robot via waypoint, agent query, keyboard,
   VR, more.
 - **Modules:** Standalone components (equivalent to ROS nodes) that publish and subscribe to typed
-  In/Out streams that communicate over DimOS transports. The building blocks of Dimensional.
+  In/Out streams that communicate over DimOS transports. The primary components of Dimensional.
 - **Agents (experimental):** DimOS agents understand physical space, subscribe to sensor streams, and call
   **physical** tools. Emergence appears when agents have physical agency.
 - **MCP (experimental):** Vibecode robots by giving your AI editor (Cursor, Claude Code) MCP access to run
@@ -98,8 +98,6 @@ Option 2: Run without installing
 ```sh
 uvx --from 'dimos[base,unitree]' dimos --replay run unitree-go2
 ```
-
-<!-- command for testing pre launch: `GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" uv pip install 'dimos[unitree] @ git+ssh://git@github.com/dimensionalOS/dimos.git@dev'` -->
 
 ### Test Installation
 
