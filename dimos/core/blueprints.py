@@ -55,7 +55,7 @@ class ModuleRef:
 class _BlueprintAtom:
     module: type[Module]
     connections: tuple[StreamRef, ...]
-    module_refs: tuple["ModuleRef", ...] = ()
+    module_refs: tuple[ModuleRef, ...] = ()
     args: tuple[Any]
     kwargs: dict[str, Any]
 
