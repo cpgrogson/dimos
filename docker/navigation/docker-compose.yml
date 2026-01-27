@@ -299,7 +299,11 @@ services:
         if [ "$USE_EXPLORATION_PLANNER" = "true" ]; then
             echo "Starting bagfile replay with TARE Exploration Planner..."
             ros2 launch vehicle_simulator system_bagfile_with_exploration_planner.launch.py &
-            RVIZ_CFG=/ros2_ws/src/ros-navigation-autonomy-stack/src/exploration_planner/tare_planner/rviz/tare_planner_ground.rviz
+            echo "Starting image decompression republisher..."
+            ros2 run image_transport republish compressed raw --ros-args -r in/compressed:=/camera/image/compressed -r out:=/camera/color/image_raw &
+            echo "Starting Track Anything 3D for semantic mapping..."
+            ros2 launch track_anything track_3d.launch.py &
+            RVIZ_CFG=/ros2_ws/src/vector_perception_ros/rviz/semantic_mapping.rviz
         elif [ "$USE_ROUTE_PLANNER" = "true" ]; then
             echo "Starting bagfile replay with FAR Route Planner..."
             ros2 launch vehicle_simulator system_bagfile_with_route_planner.launch.py &
@@ -364,6 +368,12 @@ services:
                 echo ""
                 echo "Bagfile replay finished. Waiting for final save..."
                 wait $$SAVER_PID 2>/dev/null || true
-                echo "Output saved to: $$OUTPUT_FILE"
+                if [ -f "$$OUTPUT_FILE" ]; then
+                    POINT_COUNT=$$(tail -n +8 "$$OUTPUT_FILE" | wc -l)
+                    FILE_SIZE=$$(du -h "$$OUTPUT_FILE" | cut -f1)
+                    echo "Saved $$POINT_COUNT points ($$FILE_SIZE) to: $$OUTPUT_FILE"
+                else
+                    echo "Warning: Output file not created"
+                fi
             fi
         fi

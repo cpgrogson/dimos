@@ -54,6 +54,10 @@ RUN mkdir -p ${WORKSPACE}/src
 # Copy autonomy stack source
 COPY docker/navigation/ros-navigation-autonomy-stack ${WORKSPACE}/src/ros-navigation-autonomy-stack
 
+# Clone vector_perception_ros for semantic mapping
+RUN git clone -b semantic_mapping https://github.com/VectorRobotics/vector_perception_ros.git \
+    ${WORKSPACE}/src/vector_perception_ros
+
 # Compatibility fix: In Humble, cv_bridge uses .h extension, but Jazzy uses .hpp
 # Create a symlink so code written for Jazzy works on Humble
 RUN if [ "${ROS_DISTRO}" = "humble" ]; then \
@@ -159,6 +163,10 @@ RUN ldconfig
 # Copy built ROS workspace from builder
 COPY --from=builder ${WORKSPACE}/install ${WORKSPACE}/install
 
+# Copy OR-Tools libraries for TARE exploration planner
+COPY --from=builder ${WORKSPACE}/src/ros-navigation-autonomy-stack/src/exploration_planner/tare_planner/or-tools/lib/*.so* /usr/local/lib/
+RUN ldconfig
+
 # Copy only config/rviz files from src (not the large dependency folders)
 # These are needed if running without volume mount
 COPY --from=builder ${WORKSPACE}/src/ros-navigation-autonomy-stack/src/base_autonomy/vehicle_simulator/rviz ${WORKSPACE}/src/ros-navigation-autonomy-stack/src/base_autonomy/vehicle_simulator/rviz
@@ -169,6 +177,15 @@ COPY --from=builder ${WORKSPACE}/src/ros-navigation-autonomy-stack/src/utilities
 
 # Copy simulation shell scripts (real robot mode uses volume mount)
 COPY --from=builder ${WORKSPACE}/src/ros-navigation-autonomy-stack/system_simulation*.sh ${WORKSPACE}/src/ros-navigation-autonomy-stack/
+
+# Copy vector_perception_ros source (Python packages need source for runtime)
+COPY --from=builder ${WORKSPACE}/src/vector_perception_ros ${WORKSPACE}/src/vector_perception_ros
+
+# Build vector_perception_ros packages (Python-only, needs runtime stage)
+RUN /bin/bash -c "source /opt/ros/${ROS_DISTRO}/setup.bash && \
+    source ${WORKSPACE}/install/setup.bash && \
+    cd ${WORKSPACE} && \
+    colcon build --packages-select vector_perception_utils track_anything detect_anything --symlink-install"
 
 # Create directories
 RUN mkdir -p ${DIMOS_PATH} \
@@ -227,15 +244,33 @@ EOF
 
 # Install portaudio for unitree-webrtc-connect (pyaudio dependency)
 # Install rosbag2-storage-mcap for playing .mcap bagfiles
+# Install vision_msgs_rviz_plugins for semantic mapping visualization
 RUN apt-get update && apt-get install -y --no-install-recommends \
     portaudio19-dev \
     ros-${ROS_DISTRO}-rosbag2-storage-mcap \
+    ros-${ROS_DISTRO}-vision-msgs-rviz-plugins \
+    ros-${ROS_DISTRO}-image-transport-plugins \
     && rm -rf /var/lib/apt/lists/*
 
 # Create Python venv and install dependencies
 RUN python3 -m venv /opt/dimos-venv && \
     /opt/dimos-venv/bin/pip install --no-cache-dir \
-    pyyaml
+    pyyaml \
+    # vector_perception_ros dependencies
+    numpy==1.26.4 \
+    opencv-python \
+    scipy \
+    pillow \
+    tqdm \
+    lark \
+    open3d \
+    ultralytics \
+    sam2 \
+    hydra-core \
+    omegaconf \
+    timm \
+    && /opt/dimos-venv/bin/pip install --no-cache-dir \
+    git+https://github.com/facebookresearch/EdgeTAM.git
 
 # Copy dimos source and install as editable package
 # The volume mount at runtime will overlay /workspace/dimos, but the editable
