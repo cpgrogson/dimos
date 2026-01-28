@@ -24,6 +24,7 @@ import rerun as rr
 from dimos.agents import Output, Reducer, Stream, skill
 from dimos.core import Module, ModuleConfig, Out, rpc
 from dimos.core.blueprints import autoconnect
+from dimos.core.global_config import GlobalConfig
 from dimos.dashboard.rerun_init import connect_rerun
 from dimos.hardware.sensors.camera.spec import CameraHardware
 from dimos.hardware.sensors.camera.webcam import Webcam
@@ -60,7 +61,7 @@ class CameraModule(Module[CameraModuleConfig], perception.Camera):
     config: CameraModuleConfig
     default_config = CameraModuleConfig
 
-    def __init__(self, *args: Any, global_config, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, global_config: GlobalConfig, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.global_config = global_config
 
@@ -80,7 +81,7 @@ class CameraModule(Module[CameraModuleConfig], perception.Camera):
         if self.global_config.viewer_backend.startswith("rerun"):
             connect_rerun(global_config=self.global_config)
 
-        def callback(image: Image):
+        def callback(image: Image) -> None:
             self.color_image.publish(image)
             if self.global_config.viewer_backend.startswith("rerun"):
                 rr.log("world/robot/camera/rgb", image.to_rerun())
