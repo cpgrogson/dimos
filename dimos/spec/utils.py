@@ -36,7 +36,7 @@ def is_spec(cls: Any) -> bool:
         is_spec(NormalProtocol)  # False
         is_spec(SpecProtocol)    # True
     """
-    return isinstance(cls, type) and is_protocol(cls) and Spec in cls.__mro__ and cls is not Spec
+    return inspect.isclass(cls) and is_protocol(cls) and Spec in cls.__mro__ and cls is not Spec
 
 
 def spec_structural_compliance(

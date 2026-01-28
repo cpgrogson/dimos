@@ -89,7 +89,7 @@ class ModuleBlueprint:
             elif is_spec(annotation):
                 module_refs.append(ModuleRef(name=name, spec=annotation))
             # linking to specific/known module directly
-            elif isinstance(annotation, type) and issubclass(annotation, Module):
+            elif inspect.isclass(annotation) and issubclass(annotation, Module):
                 module_refs.append(ModuleRef(name=name, spec=annotation))
 
         return cls(
@@ -300,7 +300,7 @@ class ModuleBlueprintSet:
             (module, name): replacement
             for (module, name), replacement in self.remapping_map.items()
             if is_spec(replacement)
-            or (isinstance(replacement, type) and issubclass(replacement, Module))
+            or (inspect.isclass(replacement) and issubclass(replacement, Module))
         }
 
         # after this loop we should have an exact module for every module_ref on every blueprint
@@ -312,7 +312,7 @@ class ModuleBlueprintSet:
                 )
 
                 # if the spec is actually module, use that (basically a user override)
-                if isinstance(spec, type) and issubclass(spec, Module):
+                if inspect.isclass(spec, type) and issubclass(spec, Module):
                     mod_and_mod_ref_to_proxy[blueprint.module, each_module_ref.name] = spec
                     continue
 
