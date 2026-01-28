@@ -108,6 +108,10 @@ export default class Connection {
     this.socket.emit("safety_command", { enabled, estop });
   }
 
+  policyParams(params: Record<string, unknown>): void {
+    this.socket.emit("policy_params", params);
+  }
+
   disconnect(): void {
     this.socket.disconnect();
   }

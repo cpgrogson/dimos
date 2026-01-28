@@ -162,6 +162,14 @@ unitree = [
     "unitree-webrtc-connect-leshy>=2.0.7"
 ]
 
+falcon = [
+    "dimos[sdk2]",
+    "pyyaml>=6.0",
+    # Pinocchio is provided by the `pin` package on pip (import name: `pinocchio`).
+    # We intentionally avoid Casadi-based Pinocchio bindings for easier installability.
+    "pin",
+]
+
 manipulation = [
     # Contact Graspnet Dependencies
     "h5py>=3.7.0",
@@ -325,10 +333,13 @@ module = [
     "pycuda.*",
     "pycuda",
     "plotext",
+    "numpy.*",
+    "onnxruntime.*",
     "torchreid",
     "open_clip",
     "pyzed.*",
     "pyzed",
+    "unitree_sdk2py.*",
     "unitree_webrtc_connect.*",
 ]
 ignore_missing_imports = true

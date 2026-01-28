@@ -47,6 +47,7 @@ from dimos.msgs.nav_msgs import Odometry, Path
 from dimos.msgs.sensor_msgs import Image, PointCloud2
 from dimos.msgs.std_msgs import Bool
 from dimos_lcm.std_msgs import Bool as LCMBool  # type: ignore[import-untyped]
+from dimos_lcm.std_msgs import String as LCMString  # type: ignore[import-untyped]
 from dimos.msgs.vision_msgs import Detection2DArray
 from dimos.navigation.frontier_exploration import wavefront_frontier_explorer
 from dimos.navigation.replanning_a_star.module import replanning_a_star_planner
@@ -121,6 +122,7 @@ _basic_no_nav_hw = (
             # Policy safety controls (Command Center)
             ("policy_enable", LCMBool): LCMTransport("/policy_enable", LCMBool),
             ("policy_estop", LCMBool): LCMTransport("/policy_estop", LCMBool),
+            ("policy_params_json", LCMString): LCMTransport("/policy_params_json", LCMString),
         }
     )
 )
@@ -160,6 +162,7 @@ _basic_no_nav_sim = (
             # Policy safety controls (Command Center)
             ("policy_enable", LCMBool): LCMTransport("/policy_enable", LCMBool),
             ("policy_estop", LCMBool): LCMTransport("/policy_estop", LCMBool),
+            ("policy_params_json", LCMString): LCMTransport("/policy_params_json", LCMString),
         }
     )
 )

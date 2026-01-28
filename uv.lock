@@ -1248,18 +1248,18 @@ wheels = [
 
 [[package]]
 name = "cyclonedds"
-version = "0.10.5"
+version = "0.10.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "rich-click" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/91/cf/28eb9c823dfc245c540f5286d71b44aeee2a51021fc85b25bb9562be78cc/cyclonedds-0.10.5.tar.gz", hash = "sha256:63fc4d6fdb2fd35181c40f4e90757149f2def5f570ef19fb71edc4f568755f8a", size = 156919, upload-time = "2024-06-05T18:50:42.999Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/62/88/4b440f5916976234838989c3214222a5abc6fd48009a992c4dc22a86c04f/cyclonedds-0.10.2.tar.gz", hash = "sha256:f834962eabbdcdf4e9cd75cf87222f3c5ef22d9cb9e7ed651d9a8710fe984a30", size = 156849, upload-time = "2022-09-09T07:04:19.798Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cb/c3/69ba063a51c06ba24fa4fd463157d4cc2bc54ab1a2ab8ebdf88e8f3dde25/cyclonedds-0.10.5-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:03644e406d0c1cac45887b378d35054a0033c48f2e29d9aab3bfc1ee6c4b9aa6", size = 864591, upload-time = "2024-06-05T18:50:46.563Z" },
-    { url = "https://files.pythonhosted.org/packages/cf/98/08508aff65c87bcef473e23a51506a100fb35bf70450c40eb227a576a018/cyclonedds-0.10.5-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:4a0d9fa8747827dc9bd678d73ed6f12b0ab9853b2cb7ebadbf3d8d89625f0e34", size = 799626, upload-time = "2024-06-05T18:50:48.17Z" },
-    { url = "https://files.pythonhosted.org/packages/99/0d/02da52ffd27b92b85b64997cc449106479456648da17aa44a09124e8ebe5/cyclonedds-0.10.5-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:861d2ffd9513126d6a62ad9f842e85122518a7db1fb0a11d6e4fa86e3cacf61c", size = 6631487, upload-time = "2024-06-05T18:50:50.747Z" },
-    { url = "https://files.pythonhosted.org/packages/e4/2b/d8fff5008c2c62882c2ffc185bdb0d4d1c9caf7bc5aaaef77bd9739bdc12/cyclonedds-0.10.5-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:8276b2bc347540e3ca892adf976421dbce4c6d2672934a32409db121a1431b86", size = 6653044, upload-time = "2024-06-05T18:50:52.786Z" },
-    { url = "https://files.pythonhosted.org/packages/07/ab/acaa119f552019bdb2b06478553cf712967672f5970be80ecc9b4ca805f4/cyclonedds-0.10.5-cp310-cp310-win_amd64.whl", hash = "sha256:103a681e9490229f12c151a125e00c4db8fdb344c8e12e35ee515cd9d5d1ecd7", size = 1200672, upload-time = "2024-06-05T18:50:54.303Z" },
+    { url = "https://files.pythonhosted.org/packages/16/9f/ad6b8668e5f6d7297cdca4fa42e3c57073f5a323aa7a590e2a1581289eef/cyclonedds-0.10.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:63a7e2a2b9e326939a01c86e47f47c529e066728f41faec37e6bc8d54f2f0841", size = 862463, upload-time = "2022-09-09T07:04:22.957Z" },
+    { url = "https://files.pythonhosted.org/packages/04/2b/b392a8593c9d7e7f770c60900b3ea3733704ec9786de258d6013b9faad0c/cyclonedds-0.10.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e834a6eda188a2c48aa19fa94809511dc791ed6c13bdcc20a50b50d80bfaa1f4", size = 797567, upload-time = "2022-09-09T07:04:24.353Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/23/6d8b2630e0c1f24b84c414572ca16b728c69f0d81d974756b4bf0e990afe/cyclonedds-0.10.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1194b03377e7644c7fb7230dd19b85eb363699d179459bdc5486974ec8d0fc0e", size = 6612050, upload-time = "2022-09-09T07:04:27.111Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/05/6b4084bc94f564ec8a1b2e4b3b3634835064fefec560f57d85a173d5c68f/cyclonedds-0.10.2-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:2965d180c66d2dc03d1d39de056a57007c41c6b21173fee73b808c5123a7a1c5", size = 6634895, upload-time = "2022-09-09T07:04:29.16Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/e7/3bbb2d3e6eb7aa29e2edc95ea5062458a0c92dd3e87640f83feed537e555/cyclonedds-0.10.2-cp310-cp310-win_amd64.whl", hash = "sha256:a5be989f69103954c6041b80e3ea1ae9973d41b1b0e437fb71b671417c450ad6", size = 2274046, upload-time = "2022-09-09T07:04:30.987Z" },
 ]
 
 [[package]]
@@ -1568,6 +1568,9 @@ perception = [
     { name = "transformers", extra = ["torch"] },
     { name = "ultralytics" },
 ]
+sdk2 = [
+    { name = "unitree-sdk2py" },
+]
 sim = [
     { name = "mujoco" },
     { name = "playground" },
@@ -1629,7 +1632,7 @@ requires-dist = [
     { name = "ctransformers", marker = "extra == 'cpu'", specifier = "==0.2.27" },
     { name = "ctransformers", extras = ["cuda"], marker = "extra == 'cuda'", specifier = "==0.2.27" },
     { name = "cupy-cuda12x", marker = "extra == 'cuda'", specifier = "==13.6.0" },
-    { name = "cyclonedds", specifier = ">=0.10.5" },
+    { name = "cyclonedds", specifier = ">=0.10.2" },
     { name = "dask", extras = ["complete"], specifier = "==2025.5.1" },
     { name = "dimos", extras = ["agents", "web", "perception", "visualization", "sim"], marker = "extra == 'base'" },
     { name = "dimos", extras = ["base"], marker = "extra == 'unitree'" },
@@ -1745,6 +1748,7 @@ requires-dist = [
     { name = "types-tensorflow", marker = "extra == 'dev'", specifier = ">=2.18.0.20251008,<3" },
     { name = "types-tqdm", marker = "extra == 'dev'", specifier = ">=4.67.0.20250809,<5" },
     { name = "ultralytics", marker = "extra == 'perception'", specifier = ">=8.3.70" },
+    { name = "unitree-sdk2py", marker = "extra == 'sdk2'", git = "https://github.com/unitreerobotics/unitree_sdk2_python.git" },
     { name = "unitree-webrtc-connect-leshy", marker = "extra == 'unitree'", specifier = ">=2.0.7" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.34.0" },
     { name = "watchdog", marker = "extra == 'dev'", specifier = ">=3.0.0" },
@@ -1752,7 +1756,7 @@ requires-dist = [
     { name = "xformers", marker = "extra == 'cuda'", specifier = ">=0.0.20" },
     { name = "yapf", marker = "extra == 'misc'", specifier = "==0.40.2" },
 ]
-provides-extras = ["misc", "visualization", "agents", "web", "perception", "unitree", "manipulation", "cpu", "cuda", "dev", "sim", "drone", "base"]
+provides-extras = ["misc", "visualization", "agents", "web", "perception", "unitree", "manipulation", "cpu", "cuda", "dev", "sim", "sdk2", "drone", "base"]
 
 [[package]]
 name = "dimos-lcm"
@@ -9103,6 +9107,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1f/63/21a32e1facfeee245dbdfb7b4669faf7a36ff7c00b50987932bdab126f4b/ultralytics_thop-2.0.18.tar.gz", hash = "sha256:21103bcd39cc9928477dc3d9374561749b66a1781b35f46256c8d8c4ac01d9cf", size = 34557, upload-time = "2025-10-29T16:58:13.526Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7f/c7/fb42228bb05473d248c110218ffb8b1ad2f76728ed8699856e5af21112ad/ultralytics_thop-2.0.18-py3-none-any.whl", hash = "sha256:2bb44851ad224b116c3995b02dd5e474a5ccf00acf237fe0edb9e1506ede04ec", size = 28941, upload-time = "2025-10-29T16:58:12.093Z" },
+]
+
+[[package]]
+name = "unitree-sdk2py"
+version = "1.0.1"
+source = { git = "https://github.com/unitreerobotics/unitree_sdk2_python.git#a035adeaa6f8ea171bef9a43e8477abb87a0b35e" }
+dependencies = [
+    { name = "cyclonedds" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "opencv-python" },
 ]
 
 [[package]]

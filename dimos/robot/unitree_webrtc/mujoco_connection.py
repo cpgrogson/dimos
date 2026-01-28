@@ -15,6 +15,9 @@
 # limitations under the License.
 
 
+# pyright: reportMissingImports=false
+# pyright: reportMissingModuleSource=false
+
 import base64
 from collections.abc import Callable
 import functools
@@ -49,6 +52,28 @@ ODOM_FREQUENCY = 50
 logger = setup_logger()
 
 T = TypeVar("T")
+
+
+class _PolicyRuntimeShim:
+    """Unify PolicyRuntime to the legacy SDK2PolicyRunner surface used by MujocoConnection."""
+
+    def __init__(self, rt: Any) -> None:
+        self._rt = rt
+
+    def step(self) -> None:
+        self._rt.step()
+
+    def set_command(self, vx: float, vy: float, wz: float) -> None:
+        self._rt.set_cmd_vel(vx, vy, wz)
+
+    def set_enabled(self, enabled: bool) -> None:
+        self._rt.set_enabled(enabled)
+
+    def set_estop(self, estop: bool) -> None:
+        self._rt.set_estop(estop)
+
+    def set_policy_params_json(self, params_json: str) -> None:
+        self._rt.set_policy_params_json(params_json)
 
 
 class MujocoConnection:
@@ -91,6 +116,7 @@ class MujocoConnection:
         # Latched safety state (so UI clicks before the runner is ready aren't dropped).
         self._desired_policy_enabled: bool = False
         self._desired_policy_estop: bool = False
+        self._desired_policy_params_json: str = ""
 
     def start(self) -> None:
         self.shm_data = ShmWriter()
@@ -150,7 +176,9 @@ class MujocoConnection:
             logger.info("SDK2 mode: no policy in bundle.json, waiting for external policy")
             return
 
-        robot_type = bundle_cfg.get("robot_type", "g1")
+        robot_type = str(bundle_cfg.get("robot_type", "g1"))
+        policy_kind = str(bundle_cfg.get("policy_kind", "mjlab_velocity"))
+        policy_config_name = bundle_cfg.get("policy_config")
 
         # Find policy file
         data_dir = Path(__file__).parent.parent.parent.parent / "data" / "mujoco_sim"   
@@ -166,9 +194,10 @@ class MujocoConnection:
             "Starting SDK2 policy runner",
             policy=str(policy_path),
             robot_type=robot_type,
+            policy_kind=policy_kind,
         )
 
-        # Import here to avoid circular imports
+        # Import here to avoid circular imports / heavy optional deps.
         from dimos.simulation.mujoco.sdk2_policy_runner import SDK2PolicyRunner
 
         self._policy_stop_event = threading.Event()
@@ -178,21 +207,56 @@ class MujocoConnection:
                 # Wait a bit for the simulator to fully initialize
                 time.sleep(1.0)
 
-                self._policy_runner = SDK2PolicyRunner(
-                    policy_path=str(policy_path),
-                    robot_type=robot_type,
-                    domain_id=self.global_config.sdk2_domain_id,
-                    interface=self.global_config.sdk2_interface,
-                    control_dt=0.02,  # 50 Hz
-                )
+                if policy_kind == "mjlab_velocity":
+                    self._policy_runner = SDK2PolicyRunner(
+                        policy_path=str(policy_path),
+                        robot_type=robot_type,
+                        domain_id=self.global_config.sdk2_domain_id,
+                        interface=self.global_config.sdk2_interface,
+                        control_dt=0.02,  # 50 Hz
+                    )
+                elif policy_kind == "falcon_loco_manip":
+                    if not policy_config_name:
+                        raise RuntimeError("Falcon policy_kind requires bundle.json policy_config (YAML)")
+                    yaml_path = data_dir / profile / str(policy_config_name)
+                    if not yaml_path.exists():
+                        yaml_path = data_dir / str(policy_config_name)
+                    if not yaml_path.exists():
+                        raise RuntimeError(f"Falcon policy_config not found: {policy_config_name}")
+
+                    from dimos.policies.sdk2.adapters.falcon import FalconLocoManipAdapter
+                    from dimos.policies.sdk2.runtime import PolicyRuntime, PolicyRuntimeConfig
+
+                    adapter = FalconLocoManipAdapter(
+                        policy_path=str(policy_path),
+                        falcon_yaml_path=str(yaml_path),
+                        policy_action_scale=float(bundle_cfg.get("policy_action_scale", 0.25)),  # type: ignore[arg-type]
+                    )
+                    rt = PolicyRuntime(
+                        adapter=adapter,
+                        config=PolicyRuntimeConfig(
+                            robot_type=robot_type,
+                            domain_id=self.global_config.sdk2_domain_id,
+                            interface=self.global_config.sdk2_interface,
+                            control_dt=0.02,
+                            mode_pr=int(bundle_cfg.get("mode_pr", 0)),  # type: ignore[arg-type]
+                        ),
+                    )
+                    self._policy_runner = _PolicyRuntimeShim(rt)
+                else:
+                    raise RuntimeError(f"Unknown policy_kind '{policy_kind}'")
 
                 # Run policy loop with stop check
                 logger.info("SDK2 policy runner started")
 
                 # Apply any latched safety state immediately.
                 try:
-                    self._policy_runner.set_estop(self._desired_policy_estop)
-                    self._policy_runner.set_enabled(self._desired_policy_enabled)
+                    if hasattr(self._policy_runner, "set_estop"):
+                        self._policy_runner.set_estop(self._desired_policy_estop)  # type: ignore[attr-defined]
+                    if hasattr(self._policy_runner, "set_enabled"):
+                        self._policy_runner.set_enabled(self._desired_policy_enabled)  # type: ignore[attr-defined]
+                    if hasattr(self._policy_runner, "set_policy_params_json") and self._desired_policy_params_json:
+                        self._policy_runner.set_policy_params_json(self._desired_policy_params_json)  # type: ignore[attr-defined]
                     logger.info(
                         "Applied latched policy safety state",
                         enabled=self._desired_policy_enabled,
@@ -203,7 +267,8 @@ class MujocoConnection:
 
                 while not self._policy_stop_event.is_set():
                     step_start = time.perf_counter()
-                    self._policy_runner.step()
+                    if hasattr(self._policy_runner, "step"):
+                        self._policy_runner.step()  # type: ignore[attr-defined]
                     elapsed = time.perf_counter() - step_start
                     sleep_time = 0.02 - elapsed
                     if sleep_time > 0:
@@ -439,6 +504,12 @@ class MujocoConnection:
             self._desired_policy_enabled = False
         if self._policy_runner is not None and hasattr(self._policy_runner, "set_estop"):
             self._policy_runner.set_estop(bool(estop))
+
+    def set_policy_params_json(self, params_json: str) -> None:
+        """Update policy params JSON (forwarded to policy runtime/adapters)."""
+        self._desired_policy_params_json = str(params_json or "")
+        if self._policy_runner is not None and hasattr(self._policy_runner, "set_policy_params_json"):
+            self._policy_runner.set_policy_params_json(self._desired_policy_params_json)
 
     def publish_request(self, topic: str, data: dict[str, Any]) -> dict[Any, Any]:
         print(f"publishing request, topic={topic}, data={data}")

@@ -22,6 +22,9 @@ Uses unitree_sdk2py's native ChannelFactory for full SDK2 compatibility.
 
 from __future__ import annotations
 
+# pyright: reportMissingImports=false
+# pyright: reportMissingModuleSource=false
+
 from dataclasses import dataclass
 import threading
 import time
@@ -35,6 +38,7 @@ from unitree_sdk2py.core.channel import (
     ChannelSubscriber,
 )
 
+from dimos.robot.unitree.sdk2.joints import G1_SDK2_MOTOR_JOINT_NAMES
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
@@ -498,42 +502,7 @@ class SDK2BridgeController:
             self._sport_state.velocity[2] = self.mj_data.sensordata[idx + 2]
 
 
-G1_MOTOR_JOINT_NAMES: list[str] = [
-    # Left leg (0-5)
-    "left_hip_pitch_joint",
-    "left_hip_roll_joint",
-    "left_hip_yaw_joint",
-    "left_knee_joint",
-    "left_ankle_pitch_joint",
-    "left_ankle_roll_joint",
-    # Right leg (6-11)
-    "right_hip_pitch_joint",
-    "right_hip_roll_joint",
-    "right_hip_yaw_joint",
-    "right_knee_joint",
-    "right_ankle_pitch_joint",
-    "right_ankle_roll_joint",
-    # Waist (12-14)
-    "waist_yaw_joint",
-    "waist_roll_joint",
-    "waist_pitch_joint",
-    # Left arm (15-21)
-    "left_shoulder_pitch_joint",
-    "left_shoulder_roll_joint",
-    "left_shoulder_yaw_joint",
-    "left_elbow_joint",
-    "left_wrist_roll_joint",
-    "left_wrist_pitch_joint",
-    "left_wrist_yaw_joint",
-    # Right arm (22-28)
-    "right_shoulder_pitch_joint",
-    "right_shoulder_roll_joint",
-    "right_shoulder_yaw_joint",
-    "right_elbow_joint",
-    "right_wrist_roll_joint",
-    "right_wrist_pitch_joint",
-    "right_wrist_yaw_joint",
-]
+G1_MOTOR_JOINT_NAMES: list[str] = G1_SDK2_MOTOR_JOINT_NAMES
 
 
 class SDK2MirrorController:

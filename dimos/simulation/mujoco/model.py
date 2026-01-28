@@ -96,10 +96,34 @@ def get_assets(*, profile: str | None = None) -> dict[str, bytes]:
 
     if profile:
         # Bundle-scoped assets: keep the sim fully self-contained when a profile is used.
-        # Include model.xml and anything under assets/ (meshes/textures).
-        for p in (fs_root / profile).rglob("*"):
-            if p.is_file():
-                assets[p.relative_to(fs_root).as_posix()] = p.read_bytes()
+        #
+        # IMPORTANT: MuJoCo's asset VFS rejects duplicate *basenames* (even if we provide
+        # different directory prefixes). Some profiles (e.g. Falcon) vendor Pinocchio-only
+        # URDF/meshes under "<profile>/falcon_assets/..." that must NOT be loaded into MuJoCo,
+        # otherwise we can collide on names like "pelvis.stl".
+        allowed_suffixes = {".xml", ".png", ".jpg", ".jpeg", ".stl", ".obj", ".mtl"}
+        bundle_root = fs_root / profile
+        basename_owner: dict[str, str] = {}
+
+        for fp in bundle_root.rglob("*"):
+            if not fp.is_file():
+                continue
+            if fp.suffix.lower() not in allowed_suffixes:
+                continue
+            # Skip Pinocchio-only Falcon assets to avoid MuJoCo basename collisions.
+            if "falcon_assets" in fp.parts:
+                continue
+
+            rel = fp.relative_to(fs_root).as_posix()
+            base = fp.name.lower()
+            if base in basename_owner:
+                raise ValueError(
+                    f"Repeated file name in MuJoCo assets dict: {base} "
+                    f"(from {basename_owner[base]} and {rel}). "
+                    "Remove/rename one of the files, or adjust get_assets() filtering."
+                )
+            basename_owner[base] = rel
+            assets[rel] = fp.read_bytes()
     else:
         mjx_env.update_assets(assets, mjx_env.MENAGERIE_PATH / "unitree_go1" / "assets")
         mjx_env.update_assets(assets, mjx_env.MENAGERIE_PATH / "unitree_g1" / "assets")

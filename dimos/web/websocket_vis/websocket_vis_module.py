@@ -21,7 +21,11 @@ This module provides a WebSocket data server for real-time visualization.
 The frontend is served from a separate HTML file.
 """
 
+# pyright: reportMissingImports=false
+# pyright: reportMissingModuleSource=false
+
 import asyncio
+import json
 from pathlib import Path as FilePath
 import threading
 import time
@@ -52,7 +56,7 @@ from dimos.mapping.occupancy.inflation import simple_inflate
 from dimos.mapping.types import LatLon
 from dimos.msgs.geometry_msgs import PoseStamped, Twist, TwistStamped, Vector3
 from dimos.msgs.nav_msgs import OccupancyGrid, Path
-from dimos_lcm.std_msgs import Bool  # type: ignore[import-untyped]
+from dimos_lcm.std_msgs import Bool, String  # type: ignore[import-untyped]
 from dimos.utils.logging_config import setup_logger
 
 from .optimized_costmap import OptimizedCostmapEncoder
@@ -97,6 +101,7 @@ class WebsocketVisModule(Module):
     movecmd_stamped: Out[TwistStamped]
     policy_enable: Out[Bool]
     policy_estop: Out[Bool]
+    policy_params_json: Out[String]
 
     def __init__(
         self,
@@ -393,6 +398,19 @@ class WebsocketVisModule(Module):
                     {"enabled": enabled, "estop": estop, "ts": time.time()},
                     room=sid,
                 )
+
+        @self.sio.event  # type: ignore[untyped-decorator]
+        async def policy_params(sid: str, data: dict[str, Any]) -> None:
+            """Policy parameter updates from the Command Center UI."""
+            try:
+                payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+            except Exception:
+                payload = "{}"
+            logger.info("Policy params received", sid=sid, bytes=len(payload))
+            if self.policy_params_json and self.policy_params_json.transport:
+                self.policy_params_json.publish(String(data=payload))
+            if self.sio is not None:
+                await self.sio.emit("policy_params_ack", {"ok": True, "ts": time.time()}, room=sid)
 
     def _run_uvicorn_server(self) -> None:
         config = uvicorn.Config(

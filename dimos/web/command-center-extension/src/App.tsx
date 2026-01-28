@@ -43,6 +43,18 @@ export default function App(): React.ReactElement {
 
   const [policyEnabled, setPolicyEnabled] = React.useState(false);
   const [policyEstop, setPolicyEstop] = React.useState(false);
+  const [policyParams, setPolicyParams] = React.useState(() => ({
+    stand: true,
+    base_height: 0.75,
+    waist_rpy: [0, 0, 0] as [number, number, number],
+    // EE targets are offsets from Falcon defaults (meters)
+    ee_left_xyz: [0, 0, 0] as [number, number, number],
+    ee_right_xyz: [0, 0, 0] as [number, number, number],
+    ee_yaw_deg: 0,
+    kp_scale: 1.0,
+    upper_body_ik_enabled: false,
+    upper_body_collision_check: true,
+  }));
 
   React.useEffect(() => {
     connectionRef.current = new Connection(dispatch);
@@ -53,6 +65,13 @@ export default function App(): React.ReactElement {
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    const t = window.setTimeout(() => {
+      connectionRef.current?.policyParams(policyParams);
+    }, 50);
+    return () => window.clearTimeout(t);
+  }, [policyParams]);
 
   const handleWorldClick = React.useCallback((worldX: number, worldY: number) => {
     connectionRef.current?.worldClick(worldX, worldY);
@@ -142,6 +161,183 @@ export default function App(): React.ReactElement {
         <Button onClick={handleToggleEstop} isActive={policyEstop}>
           {policyEstop ? "Clear E-Stop" : "E-Stop"}
         </Button>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            padding: 6,
+            border: "1px solid rgba(255,255,255,0.15)",
+            borderRadius: 6,
+            minWidth: 260,
+          }}
+        >
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <Button
+              onClick={() => setPolicyParams((p) => ({ ...p, stand: !p.stand }))}
+              isActive={policyParams.stand}
+            >
+              {policyParams.stand ? "Walk" : "Stand"}
+            </Button>
+            <Button
+              onClick={() =>
+                setPolicyParams((p) => ({
+                  ...p,
+                  upper_body_ik_enabled: !p.upper_body_ik_enabled,
+                }))
+              }
+              isActive={policyParams.upper_body_ik_enabled}
+            >
+              {policyParams.upper_body_ik_enabled ? "IK On" : "IK Off"}
+            </Button>
+            <Button
+              onClick={() =>
+                setPolicyParams((p) => ({
+                  ...p,
+                  upper_body_collision_check: !p.upper_body_collision_check,
+                }))
+              }
+              isActive={policyParams.upper_body_collision_check}
+            >
+              {policyParams.upper_body_collision_check ? "Coll On" : "Coll Off"}
+            </Button>
+          </div>
+
+          <label style={{ fontSize: 12 }}>
+            Base height: {policyParams.base_height.toFixed(2)}
+            <input
+              type="range"
+              min={0.55}
+              max={0.90}
+              step={0.01}
+              value={policyParams.base_height}
+              onChange={(e) => setPolicyParams((p) => ({ ...p, base_height: Number(e.target.value) }))}
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label style={{ fontSize: 12 }}>
+            KP scale: {policyParams.kp_scale.toFixed(2)}
+            <input
+              type="range"
+              min={0.2}
+              max={1.5}
+              step={0.05}
+              value={policyParams.kp_scale}
+              onChange={(e) => setPolicyParams((p) => ({ ...p, kp_scale: Number(e.target.value) }))}
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label style={{ fontSize: 12 }}>
+            Waist yaw: {policyParams.waist_rpy[0].toFixed(2)}
+            <input
+              type="range"
+              min={-1.2}
+              max={1.2}
+              step={0.05}
+              value={policyParams.waist_rpy[0]}
+              onChange={(e) =>
+                setPolicyParams((p) => ({
+                  ...p,
+                  waist_rpy: [Number(e.target.value), p.waist_rpy[1], p.waist_rpy[2]],
+                }))
+              }
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label style={{ fontSize: 12 }}>
+            Waist pitch: {policyParams.waist_rpy[2].toFixed(2)}
+            <input
+              type="range"
+              min={-1.0}
+              max={1.0}
+              step={0.05}
+              value={policyParams.waist_rpy[2]}
+              onChange={(e) =>
+                setPolicyParams((p) => ({
+                  ...p,
+                  waist_rpy: [p.waist_rpy[0], p.waist_rpy[1], Number(e.target.value)],
+                }))
+              }
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label style={{ fontSize: 12 }}>
+            EE yaw deg: {policyParams.ee_yaw_deg.toFixed(0)}
+            <input
+              type="range"
+              min={-45}
+              max={45}
+              step={5}
+              value={policyParams.ee_yaw_deg}
+              onChange={(e) => setPolicyParams((p) => ({ ...p, ee_yaw_deg: Number(e.target.value) }))}
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label style={{ fontSize: 12 }}>
+            EE x offset: {policyParams.ee_left_xyz[0].toFixed(2)}
+            <input
+              type="range"
+              min={-0.20}
+              max={0.20}
+              step={0.01}
+              value={policyParams.ee_left_xyz[0]}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setPolicyParams((p) => ({
+                  ...p,
+                  ee_left_xyz: [v, p.ee_left_xyz[1], p.ee_left_xyz[2]],
+                  ee_right_xyz: [v, p.ee_right_xyz[1], p.ee_right_xyz[2]],
+                }));
+              }}
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label style={{ fontSize: 12 }}>
+            EE y offset: {policyParams.ee_left_xyz[1].toFixed(2)}
+            <input
+              type="range"
+              min={-0.20}
+              max={0.20}
+              step={0.01}
+              value={policyParams.ee_left_xyz[1]}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setPolicyParams((p) => ({
+                  ...p,
+                  ee_left_xyz: [p.ee_left_xyz[0], v, p.ee_left_xyz[2]],
+                  ee_right_xyz: [p.ee_right_xyz[0], -v, p.ee_right_xyz[2]],
+                }));
+              }}
+              style={{ width: "100%" }}
+            />
+          </label>
+
+          <label style={{ fontSize: 12 }}>
+            EE z offset: {policyParams.ee_left_xyz[2].toFixed(2)}
+            <input
+              type="range"
+              min={-0.20}
+              max={0.20}
+              step={0.01}
+              value={policyParams.ee_left_xyz[2]}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setPolicyParams((p) => ({
+                  ...p,
+                  ee_left_xyz: [p.ee_left_xyz[0], p.ee_left_xyz[1], v],
+                  ee_right_xyz: [p.ee_right_xyz[0], p.ee_right_xyz[1], v],
+                }));
+              }}
+              style={{ width: "100%" }}
+            />
+          </label>
+        </div>
         <KeyboardControlPanel
           onSendMoveCommand={handleSendMoveCommand}
           onStopMoveCommand={handleStopMoveCommand}
