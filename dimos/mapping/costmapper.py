@@ -20,7 +20,6 @@ from reactivex import operators as ops
 from dimos.core import In, Module, Out, rpc
 from dimos.core.global_config import GlobalConfig
 from dimos.core.module import ModuleConfig
-from dimos.dashboard.rerun_init import connect_rerun
 from dimos.mapping.pointclouds.occupancy import (
     OCCUPANCY_ALGOS,
     HeightCostConfig,
@@ -53,11 +52,6 @@ class CostMapper(Module):
     @rpc
     def start(self) -> None:
         super().start()
-
-        # Only start Rerun logging if Rerun backend is selected
-        if self._global_config.viewer_backend.startswith("rerun"):
-            connect_rerun(global_config=self._global_config)
-            logger.info("CostMapper: Rerun logging enabled (sync)")
 
         def _publish_costmap(grid: OccupancyGrid, calc_time_ms: float, rx_monotonic: float) -> None:
             self.global_costmap.publish(grid)

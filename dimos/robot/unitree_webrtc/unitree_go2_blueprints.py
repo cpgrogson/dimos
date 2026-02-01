@@ -32,10 +32,8 @@ from dimos.agents.vlm_agent import vlm_agent
 from dimos.agents.vlm_stream_tester import vlm_stream_tester
 from dimos.core.base_blueprints import base_blueprint
 from dimos.core.blueprints import autoconnect
-from dimos.core.global_config import GlobalConfig
 from dimos.core.transport import (
     JpegLcmTransport,
-    JpegShmTransport,
     LCMTransport,
     ROSTransport,
 )
@@ -54,17 +52,13 @@ from dimos.perception.detection.module3D import Detection3DModule, detection3d_m
 from dimos.perception.experimental.temporal_memory import temporal_memory
 from dimos.perception.spatial_perception import spatial_memory
 from dimos.protocol.mcp.mcp import MCPModule
-from dimos.robot.foxglove_bridge import foxglove_bridge
 from dimos.robot.unitree.connection.go2 import GO2Connection, go2_connection
 from dimos.robot.unitree_webrtc.unitree_skill_container import unitree_skills
 from dimos.utils.monitoring import utilization
 from dimos.web.websocket_vis.websocket_vis_module import websocket_vis
 
-_config = GlobalConfig()
-
-
 unitree_go2_basic = autoconnect(
-    base_blueprint,
+    base_blueprint(),
     go2_connection(),
     websocket_vis(),
 ).global_config(n_dask_workers=4, robot_model="unitree_go2")
@@ -138,19 +132,6 @@ _with_jpeglcm = unitree_go2.transports(
     {
         ("color_image", Image): JpegLcmTransport("/color_image", Image),
     }
-)
-
-_with_jpegshm = autoconnect(
-    unitree_go2.transports(
-        {
-            ("color_image", Image): JpegShmTransport("/color_image", quality=75),
-        }
-    ),
-    foxglove_bridge(
-        jpeg_shm_channels=[
-            "/color_image#sensor_msgs.Image",
-        ]
-    ),
 )
 
 _common_agentic = autoconnect(
