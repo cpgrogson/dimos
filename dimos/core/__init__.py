@@ -35,7 +35,7 @@ __getattr__, __dir__, __all__ = lazy.attach(
         ],
     },
 )
-__all__ += ["rpc", "start", "wait_exit"]
+__all__ += ["DimosCluster", "Module", "rpc", "start", "wait_exit"]
 
 
 class CudaCleanupPlugin:

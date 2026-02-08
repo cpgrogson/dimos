@@ -46,7 +46,7 @@ class JoystickModule(Module):
         self.running = False
         self.current_mode = 0  # Start in IDLE mode for safety
 
-    @rpc  # type: ignore[untyped-decorator]
+    @rpc
     def start(self) -> bool:
         """Initialize pygame and start control loop."""
 
@@ -68,7 +68,7 @@ class JoystickModule(Module):
 
         return True
 
-    @rpc  # type: ignore[untyped-decorator]
+    @rpc
     def stop(self) -> None:
         """Stop the joystick module."""
 
