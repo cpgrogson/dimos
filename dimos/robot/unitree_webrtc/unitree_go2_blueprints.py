@@ -89,7 +89,7 @@ rerun_config = {
             optical_frame="camera_optical",
         ),
         "world/global_map": lambda grid: grid.to_rerun(voxel_size=0.1),
-        "world/debug_navigation": lambda grid: grid.to_rerun(
+        "world/navigation_costmap": lambda grid: grid.to_rerun(
             colormap="Accent",
             z_offset=0.015,
             opacity=0.2,

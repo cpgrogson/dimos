@@ -35,7 +35,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
     navigation_state: Out[String]  # TODO: set it
     cmd_vel: Out[Twist]
     path: Out[Path]
-    debug_navigation: Out[OccupancyGrid]
+    navigation_costmap: Out[OccupancyGrid]
 
     _planner: GlobalPlanner
     _global_config: GlobalConfig
@@ -66,7 +66,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
 
         if "DEBUG_NAVIGATION" in os.environ:
             self._disposables.add(
-                self._planner.debug_navigation.subscribe(self.debug_navigation.publish)
+                self._planner.navigation_costmap.subscribe(self.navigation_costmap.publish)
             )
 
         self._planner.start()

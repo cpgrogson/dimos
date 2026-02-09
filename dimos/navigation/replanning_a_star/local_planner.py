@@ -45,7 +45,7 @@ logger = setup_logger()
 class LocalPlanner(Resource):
     cmd_vel: Subject[Twist]
     stopped_navigating: Subject[StopMessage]
-    debug_navigation: Subject[OccupancyGrid]
+    navigation_costmap: Subject[OccupancyGrid]
 
     _thread: Thread | None = None
     _path: Path | None = None
@@ -66,15 +66,15 @@ class LocalPlanner(Resource):
     _speed: float = 0.55
     _control_frequency: float = 10
     _orientation_tolerance: float = 0.35
-    _debug_navigation_interval: float = 1.0
-    _debug_navigation_last: float = 0.0
+    _navigation_costmap_interval: float = 1.0
+    _navigation_costmap_last: float = 0.0
 
     def __init__(
         self, global_config: GlobalConfig, navigation_map: NavigationMap, goal_tolerance: float
     ) -> None:
         self.cmd_vel = Subject()
         self.stopped_navigating = Subject()
-        self.debug_navigation = Subject()
+        self.navigation_costmap = Subject()
 
         self._pose_index = 0
         self._lock = RLock()
@@ -193,7 +193,7 @@ class LocalPlanner(Resource):
                 path_clearance.update_costmap(self._navigation_map.binary_costmap)
                 path_clearance.update_pose_index(self._pose_index)
 
-            self._send_debug_navigation(path, path_clearance)
+            self._send_navigation_costmap(path, path_clearance)
 
             if path_clearance.is_obstacle_ahead():
                 logger.info("Obstacle detected ahead, stopping local planner.")
@@ -311,14 +311,14 @@ class LocalPlanner(Resource):
             self._pose_index = 0
             self._controller.reset_errors()
 
-    def _send_debug_navigation(self, path: Path, path_clearance: PathClearance) -> None:
+    def _send_navigation_costmap(self, path: Path, path_clearance: PathClearance) -> None:
         if "DEBUG_NAVIGATION" not in os.environ:
             return
 
         now = time.time()
-        if now - self._debug_navigation_last < self._debug_navigation_interval:
+        if now - self._navigation_costmap_last < self._navigation_costmap_interval:
             return
 
-        self._debug_navigation_last = now
+        self._navigation_costmap_last = now
 
-        self.debug_navigation.on_next(self._navigation_map.gradient_costmap)
+        self.navigation_costmap.on_next(self._navigation_map.gradient_costmap)

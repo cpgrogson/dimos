@@ -155,8 +155,8 @@ class GlobalPlanner(Resource):
         return self._local_planner.cmd_vel
 
     @property
-    def debug_navigation(self) -> Subject[OccupancyGrid]:
-        return self._local_planner.debug_navigation
+    def navigation_costmap(self) -> Subject[OccupancyGrid]:
+        return self._local_planner.navigation_costmap
 
     def _thread_entrypoint(self) -> None:
         """Monitor if the robot is stuck, veers off track, or stopped navigating."""

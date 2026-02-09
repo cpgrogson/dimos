@@ -39,6 +39,9 @@ from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.protocol.pubsub.patterns import Glob, pattern_matches
 from dimos.utils.logging_config import setup_logger
 
+RERUN_GRPC_PORT = 9876
+RERUN_WEB_PORT = 9090
+
 # TODO OUT visual annotations
 #
 # In the future it would be nice if modules can annotate their individual OUTs with (general or rerun specific)
@@ -181,9 +184,6 @@ class RerunBridgeModule(Module):
     default_config = Config
     config: Config
 
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__(**kwargs)
-
     @lru_cache(maxsize=256)
     def _visual_override_for_entity_path(
         self, entity_path: str
@@ -320,7 +320,7 @@ def run_bridge(
                 optical_frame="camera_optical",
             ),
             "world/global_map": lambda grid: grid.to_rerun(voxel_size=0.1),
-            "world/debug_navigation": lambda grid: grid.to_rerun(
+            "world/navigation_costmap": lambda grid: grid.to_rerun(
                 colormap="Accent",
                 z_offset=0.015,
                 opacity=0.2,
