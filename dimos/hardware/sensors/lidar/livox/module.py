@@ -79,7 +79,9 @@ class Mid360CppModule(NativeModule, perception.Lidar, perception.IMU):
         imu (Out[Imu]): IMU data at ~200 Hz (if enabled).
     """
 
-    default_config: type[Mid360CppConfig] = Mid360CppConfig  # type: ignore[assignment]
+    config: Mid360CppConfig
+    default_config = Mid360CppConfig
+
     pointcloud: Out[PointCloud2]
     imu: Out[Imu]
 
