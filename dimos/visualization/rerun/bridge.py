@@ -202,6 +202,10 @@ class RerunBridgeModule(Module):
             if pattern_matches(pattern, entity_path)
         ]
 
+        # None means "suppress this topic entirely"
+        if any(fn is None for fn in matches):
+            return lambda msg: None
+
         # final step (ensures we return Archetype or None)
         def final_convert(msg: Any) -> RerunData | None:
             if isinstance(msg, Archetype):

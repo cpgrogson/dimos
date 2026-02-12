@@ -91,7 +91,7 @@ class FastLio2Config(NativeModuleConfig):
     host_log_data_port: int = 56501
 
 
-class FastLio2Module(NativeModule):
+class FastLio2(NativeModule):
     """FAST-LIO2 SLAM module with integrated Livox Mid-360 driver.
 
     Ports:
@@ -179,10 +179,10 @@ class FastLio2Module(NativeModule):
         return f.name
 
 
-fastlio2_module = FastLio2Module.blueprint
+fastlio2_module = FastLio2.blueprint
 
 __all__ = [
+    "FastLio2",
     "FastLio2Config",
-    "FastLio2Module",
     "fastlio2_module",
 ]

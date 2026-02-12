@@ -13,12 +13,12 @@
 # limitations under the License.
 
 from dimos.core.blueprints import autoconnect
-from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2Module
+from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2
 from dimos.mapping.voxels import VoxelGridMapper
 from dimos.visualization.rerun.bridge import rerun_bridge
 
 mid360_fastlio = autoconnect(
-    FastLio2Module.blueprint(),
+    FastLio2.blueprint(),
     rerun_bridge(),
 ).global_config(n_dask_workers=2, robot_model="mid360_fastlio2")
 
@@ -27,10 +27,11 @@ rerun_config = {}
 
 mid360_fastlio_voxels = autoconnect(
     FastLio2Module.blueprint(),
-    VoxelGridMapper.blueprint(publish_interval=0.5, voxel_size=0.25, carve_columns=False),
+    VoxelGridMapper.blueprint(publish_interval=0.5, voxel_size=0.1, carve_columns=False),
     rerun_bridge(
         visual_override={
-            "world/global_map": lambda grid: grid.to_rerun(voxel_size=0.25, mode="boxes"),
+            "world/global_map": lambda grid: grid.to_rerun(voxel_size=0.1, mode="boxes"),
+            "world/lidar": None,
         }
     ),
-).global_config(n_dask_workers=2, robot_model="mid360_fastlio2_voxels")
+).global_config(n_dask_workers=3, robot_model="mid360_fastlio2_voxels")
