@@ -48,7 +48,7 @@ from pathlib import Path
 import signal
 import subprocess
 import threading
-from typing import IO
+from typing import IO, Any
 
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
@@ -102,7 +102,7 @@ class NativeModuleConfig(ModuleConfig):
         return args
 
 
-class NativeModule(Module):
+class NativeModule(Module[NativeModuleConfig]):
     """Module that wraps a native executable as a managed subprocess.
 
     Subclass this, declare In/Out ports, and set ``default_config`` to a
@@ -122,7 +122,7 @@ class NativeModule(Module):
     _watchdog: threading.Thread | None = None
     _stopping: bool = False
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._io_threads = []
 

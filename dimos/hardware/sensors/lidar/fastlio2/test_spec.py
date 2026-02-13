@@ -16,14 +16,14 @@
 
 from __future__ import annotations
 
-from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2Module
+from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2
 
 
 def test_fastlio2_has_lidar_port() -> None:
-    hints = FastLio2Module.__annotations__
+    hints = FastLio2.__annotations__
     assert "lidar" in hints
 
 
 def test_fastlio2_has_odometry_port() -> None:
-    hints = FastLio2Module.__annotations__
+    hints = FastLio2.__annotations__
     assert "odometry" in hints

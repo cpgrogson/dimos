@@ -22,7 +22,8 @@ from typing import Any
 import reactivex as rx
 from reactivex import operators as ops
 
-from dimos.core import Module, ModuleConfig, Out, rpc
+from dimos.core import Module, Out, rpc
+from dimos.core.module import ModuleConfig
 from dimos.hardware.sensors.lidar.spec import LidarHardware
 from dimos.msgs.geometry_msgs import Quaternion, Transform, Vector3
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
