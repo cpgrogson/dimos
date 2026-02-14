@@ -9,7 +9,8 @@
             ╚═════╝ ╚═╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝
 </pre>
 
-<h4 align="center">The Agentive Operating System for Generalist Robotics</h4>
+<img src="assets/dimensional.svg" alt="Dimensional" />
+<img src="assets/dimensional-text.svg" alt="Dimensional" />
 
 <br>
 
@@ -39,3 +40,11 @@
 - general linux (nixos)
 - macos
 - ubuntu 2.4
+
+# Documentation
+
+
+# Development
+
+
+# Contributing
