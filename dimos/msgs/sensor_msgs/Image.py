@@ -33,14 +33,10 @@ from dimos.types.timestamped import Timestamped, TimestampedBufferCollection, to
 from dimos.utils.reactive import quality_barrier
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     import os
 
     from reactivex.observable import Observable
-
-try:
-    from sensor_msgs.msg import Image as ROSImage  # type: ignore[attr-defined]
-except ImportError:
-    ROSImage = None  # type: ignore[assignment, misc]
 
 
 class ImageFormat(Enum):
@@ -470,7 +466,7 @@ class Image(Timestamped):
         channels = 1 if self.data.ndim == 2 else self.data.shape[2]
         msg.step = self.width * self.dtype.itemsize * channels
 
-        view = memoryview(np.ascontiguousarray(self.data)).cast("B")
+        view = memoryview(np.ascontiguousarray(self.data)).cast("B")  # type: ignore[arg-type]
         msg.data_length = len(view)
         msg.data = view
 
@@ -575,91 +571,6 @@ class Image(Timestamped):
             ),
         )
 
-    @classmethod
-    def from_ros_msg(cls, ros_msg: ROSImage) -> Image:
-        """Create an Image from a ROS sensor_msgs/Image message.
-
-        Args:
-            ros_msg: ROS Image message
-
-        Returns:
-            Image instance
-        """
-        # Convert timestamp from ROS header
-        ts = ros_msg.header.stamp.sec + (ros_msg.header.stamp.nanosec / 1_000_000_000)
-
-        # Parse encoding to determine format and data type
-        format_info = cls._parse_encoding(ros_msg.encoding)
-
-        # Convert data from ROS message (array.array) to numpy array
-        data_array = np.frombuffer(ros_msg.data, dtype=format_info["dtype"])
-
-        # Reshape to image dimensions
-        if format_info["channels"] == 1:
-            data_array = data_array.reshape((ros_msg.height, ros_msg.width))
-        else:
-            data_array = data_array.reshape(
-                (ros_msg.height, ros_msg.width, format_info["channels"])
-            )
-
-        # Crop to center 1/3 of the image (simulate 120-degree FOV from 360-degree)
-        original_width = data_array.shape[1]
-        crop_width = original_width // 3
-        start_x = (original_width - crop_width) // 2
-        end_x = start_x + crop_width
-
-        # Crop the image horizontally to center 1/3
-        if len(data_array.shape) == 2:
-            # Grayscale image
-            data_array = data_array[:, start_x:end_x]
-        else:
-            # Color image
-            data_array = data_array[:, start_x:end_x, :]
-
-        # Fix color channel order: if ROS sends RGB but we expect BGR, swap channels
-        # ROS typically uses rgb8 encoding, but OpenCV/our system expects BGR
-        if format_info["format"] == ImageFormat.RGB:
-            # Convert RGB to BGR by swapping channels
-            if len(data_array.shape) == 3 and data_array.shape[2] == 3:
-                data_array = data_array[:, :, [2, 1, 0]]  # RGB -> BGR
-                format_info["format"] = ImageFormat.BGR
-        elif format_info["format"] == ImageFormat.RGBA:
-            # Convert RGBA to BGRA by swapping channels
-            if len(data_array.shape) == 3 and data_array.shape[2] == 4:
-                data_array = data_array[:, :, [2, 1, 0, 3]]  # RGBA -> BGRA
-                format_info["format"] = ImageFormat.BGRA
-
-        return cls(
-            data=data_array,
-            format=format_info["format"],
-            frame_id=ros_msg.header.frame_id,
-            ts=ts,
-        )
-
-    @staticmethod
-    def _parse_encoding(encoding: str) -> dict[str, Any]:
-        """Translate ROS encoding strings into format metadata."""
-        encoding_map = {
-            "mono8": {"format": ImageFormat.GRAY, "dtype": np.uint8, "channels": 1},
-            "mono16": {"format": ImageFormat.GRAY16, "dtype": np.uint16, "channels": 1},
-            "rgb8": {"format": ImageFormat.RGB, "dtype": np.uint8, "channels": 3},
-            "rgba8": {"format": ImageFormat.RGBA, "dtype": np.uint8, "channels": 4},
-            "bgr8": {"format": ImageFormat.BGR, "dtype": np.uint8, "channels": 3},
-            "bgra8": {"format": ImageFormat.BGRA, "dtype": np.uint8, "channels": 4},
-            "32FC1": {"format": ImageFormat.DEPTH, "dtype": np.float32, "channels": 1},
-            "32FC3": {"format": ImageFormat.RGB, "dtype": np.float32, "channels": 3},
-            "64FC1": {"format": ImageFormat.DEPTH, "dtype": np.float64, "channels": 1},
-            "16UC1": {"format": ImageFormat.DEPTH16, "dtype": np.uint16, "channels": 1},
-            "16SC1": {"format": ImageFormat.DEPTH16, "dtype": np.int16, "channels": 1},
-        }
-
-        key = encoding.strip()
-        for candidate in (key, key.lower(), key.upper()):
-            if candidate in encoding_map:
-                return dict(encoding_map[candidate])
-
-        raise ValueError(f"Unsupported encoding: {encoding}")
-
 
 __all__ = [
     "Image",
@@ -682,9 +593,9 @@ def sharpness_window(target_frequency: float, source: Observable[Image]) -> Obse
     thread_scheduler = ThreadPoolScheduler(max_workers=1)
 
     def find_best(*_args: Any) -> Image | None:
-        if not window._items:
+        if len(window) == 0:
             return None
-        return max(window._items, key=lambda img: img.sharpness)  # type: ignore[no-any-return]
+        return max(window, key=lambda img: img.sharpness)  # type: ignore[no-any-return]
 
     return rx.interval(1.0 / target_frequency).pipe(  # type: ignore[misc]
         ops.observe_on(thread_scheduler),
@@ -693,7 +604,7 @@ def sharpness_window(target_frequency: float, source: Observable[Image]) -> Obse
     )
 
 
-def sharpness_barrier(target_frequency: float) -> Any:
+def sharpness_barrier(target_frequency: float) -> Callable[[Observable[Image]], Observable[Image]]:
     """Select the sharpest Image within each time window."""
     if target_frequency <= 0:
         raise ValueError("target_frequency must be positive")

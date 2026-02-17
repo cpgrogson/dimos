@@ -1,5 +1,5 @@
 <div align="center">
-   <img width="1000" alt="banner_bordered_trimmed" src="https://github.com/user-attachments/assets/15283d94-ad95-42c9-abd5-6565a222a837" /> </a>
+   <img width="1000" alt="banner_bordered_trimmed" src="https://github.com/user-attachments/assets/64f13b39-da06-4f58-add0-cfc44f04db4e" /> </a>
     <h4 align="center">Program Atoms</h4>
     <h4 align="center">The Agentive Operating System for Generalist Robotics</h4>
 
@@ -148,11 +148,9 @@ Modules are subsystems on a robot that operate autonomously and communicate with
 
 ```py
 import threading, time, numpy as np
-from dimos.core import In, Module, Out, rpc
-from dimos.core.blueprints import autoconnect
+from dimos.core import In, Module, Out, rpc, autoconnect
 from dimos.msgs.geometry_msgs import Twist
-from dimos.msgs.sensor_msgs import Image
-from dimos.msgs.sensor_msgs.Image import ImageFormat
+from dimos.msgs.sensor_msgs import Image, ImageFormat
 
 class RobotConnection(Module):
     cmd_vel: In[Twist]
@@ -195,19 +193,19 @@ Blueprints can be composed, remapped, and have transports overridden if `autocon
 
 A blueprint example that connects the image stream from a robot to an LLM Agent for reasoning and action execution.
 ```py
-from dimos.core.blueprints import autoconnect
-from dimos.core.transport import LCMTransport
+from dimos.core import autoconnect, LCMTransport
 from dimos.msgs.sensor_msgs import Image
-from dimos.robot.unitree.connection.go2 import go2_connection
-from dimos.agents.agent import llm_agent
+from dimos.robot.unitree.go2.connection import go2_connection
+from dimos.agents.agent import agent
 
 blueprint = autoconnect(
     go2_connection(),
-    llm_agent(),
+    agent(),
 ).transports({("color_image", Image): LCMTransport("/color_image", Image)})
 
 # Run the blueprint
-blueprint.build().loop()
+if __name__ == "__main__":
+    blueprint.build().loop()
 ```
 
 # Development
@@ -236,7 +234,6 @@ For system deps, Nix setups, and testing, see `/docs/development/README.md`.
 
 DimOS comes with a number of monitoring tools:
 - Run `lcmspy` to see how fast messages are being published on streams.
-- Run `skillspy` to see how skills are being called, how long they are running, which are active, etc.
 - Run `agentspy` to see the agent's status over time.
 - If you suspect there is a bug within DimOS itself, you can enable extreme logging by prefixing the dimos command with `DIMOS_LOG_LEVEL=DEBUG RERUN_SAVE=1 `. Ex: `DIMOS_LOG_LEVEL=DEBUG RERUN_SAVE=1 dimos --replay run unitree-go2`
 
@@ -244,8 +241,8 @@ DimOS comes with a number of monitoring tools:
 # Documentation
 
 Concepts:
-- [Modules](/docs/concepts/modules.md): The building blocks of DimOS, modules run in parallel and are singleton python classes.
-- [Streams](/docs/api/sensor_streams/index.md): How modules communicate, a Pub / Sub system.
+- [Modules](/docs/usage/modules.md): The building blocks of DimOS, modules run in parallel and are singleton python classes.
+- [Streams](/docs/usage/sensor_streams/index.md): How modules communicate, a Pub / Sub system.
 - [Blueprints](/dimos/core/README_BLUEPRINTS.md): a way to group modules together and define their connections to each other.
 - [RPC](/dimos/core/README_BLUEPRINTS.md#calling-the-methods-of-other-modules): how one module can call a method on another module (arguments get serialized to JSON-like binary data).
 - [Skills](/dimos/core/README_BLUEPRINTS.md#defining-skills): An RPC function, except it can be called by an AI agent (a tool for an AI).

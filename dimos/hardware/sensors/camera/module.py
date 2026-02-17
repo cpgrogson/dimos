@@ -12,25 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import time
 from typing import Any
 
 import reactivex as rx
-from reactivex import operators as ops
 
-from dimos.agents import Output, Reducer, Stream, skill
-from dimos.core import Module, ModuleConfig, Out, rpc
+from dimos.agents.annotation import skill
 from dimos.core.blueprints import autoconnect
+from dimos.core.core import rpc
 from dimos.core.global_config import GlobalConfig, global_config
+from dimos.core.module import Module, ModuleConfig
+from dimos.core.stream import Out
 from dimos.hardware.sensors.camera.spec import CameraHardware
 from dimos.hardware.sensors.camera.webcam import Webcam
 from dimos.msgs.geometry_msgs import Quaternion, Transform, Vector3
 from dimos.msgs.sensor_msgs.CameraInfo import CameraInfo
 from dimos.msgs.sensor_msgs.Image import Image, sharpness_barrier
 from dimos.spec import perception
-from dimos.utils.reactive import iter_observable
 
 
 def default_transform() -> Transform:
@@ -62,6 +62,7 @@ class CameraModule(Module[CameraModuleConfig], perception.Camera):
 
     def __init__(self, *args: Any, cfg: GlobalConfig = global_config, **kwargs: Any) -> None:
         self._global_config = cfg
+        self._latest_image: Image | None = None
         super().__init__(*args, **kwargs)
 
     @rpc
@@ -80,6 +81,7 @@ class CameraModule(Module[CameraModuleConfig], perception.Camera):
 
         def on_image(image: Image) -> None:
             self.color_image.publish(image)
+            self._latest_image = image
 
         self._disposables.add(
             stream.subscribe(on_image),
@@ -109,11 +111,12 @@ class CameraModule(Module[CameraModuleConfig], perception.Camera):
 
         self.tf.publish(camera_link, camera_optical)
 
-    # actually skills should support on_demand passive skills so we don't emit this periodically
-    # but just provide the latest frame on demand
-    @skill(stream=Stream.passive, output=Output.image, reducer=Reducer.latest)  # type: ignore[arg-type]
-    def video_stream(self) -> Generator[Image, None, None]:
-        yield from iter_observable(self.hardware.image_stream().pipe(ops.sample(1.0)))
+    @skill
+    def take_a_picture(self) -> Image:
+        """Grabs and returns the latest image from the camera."""
+        if self._latest_image is None:
+            raise RuntimeError("No image received from camera yet.")
+        return self._latest_image
 
     def stop(self) -> None:
         if self.hardware and hasattr(self.hardware, "stop"):

@@ -20,8 +20,9 @@ import numpy as np
 from numpy.typing import NDArray
 import open3d as o3d  # type: ignore[import-untyped]
 
+from dimos.agents.annotation import skill
 from dimos.core import In, Out, rpc
-from dimos.core.skill_module import SkillModule
+from dimos.core.module import Module
 from dimos.msgs.foxglove_msgs import ImageAnnotations
 from dimos.msgs.sensor_msgs import CameraInfo, Image, PointCloud2
 from dimos.msgs.sensor_msgs.Image import ImageFormat
@@ -32,10 +33,10 @@ from dimos.perception.detection.objectDB import ObjectDB
 from dimos.perception.detection.type import ImageDetections2D
 from dimos.perception.detection.type.detection3d.object import (
     Object,
+    Object as DetObject,
     aggregate_pointclouds,
     to_detection3d_array,
 )
-from dimos.protocol.skill.skill import skill
 from dimos.types.timestamped import align_timestamped
 from dimos.utils.logging_config import setup_logger
 from dimos.utils.reactive import backpressure
@@ -43,7 +44,7 @@ from dimos.utils.reactive import backpressure
 logger = setup_logger()
 
 
-class ObjectSceneRegistrationModule(SkillModule):
+class ObjectSceneRegistrationModule(Module):
     """Module for detecting objects in camera images using YOLO-E with 2D and 3D detection."""
 
     color_image: In[Image]
@@ -52,6 +53,7 @@ class ObjectSceneRegistrationModule(SkillModule):
 
     detections_2d: Out[Detection2DArray]
     detections_3d: Out[Detection3DArray]
+    objects: Out[list[DetObject]]
     overlay: Out[ImageAnnotations]
     pointcloud: Out[PointCloud2]
 
@@ -219,7 +221,7 @@ class ObjectSceneRegistrationModule(SkillModule):
 
         return pc
 
-    @skill()
+    @skill
     def detect(self, *prompts: str) -> str:
         """Detect objects matching the given text prompts.
 
@@ -251,7 +253,7 @@ class ObjectSceneRegistrationModule(SkillModule):
         obj_list = [f"  - {obj['name']} (object_id='{obj['object_id']}')" for obj in detected]
         return f"Detected {len(detected)} object(s):\n" + "\n".join(obj_list)
 
-    @skill()
+    @skill
     def select(self, track_id: int) -> str:
         """Select an object by track_id and promote it to permanent.
 
@@ -343,6 +345,7 @@ class ObjectSceneRegistrationModule(SkillModule):
 
         detections_3d = to_detection3d_array(objects)
         self.detections_3d.publish(detections_3d)
+        self.objects.publish(objects)
 
         objects_for_pc = self._object_db.get_objects()
         aggregated_pc = aggregate_pointclouds(objects_for_pc)

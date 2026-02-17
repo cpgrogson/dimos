@@ -19,9 +19,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 from reactivex.disposable import Disposable
 
+from dimos.agents.annotation import skill
 from dimos.core.core import rpc
 from dimos.core.global_config import GlobalConfig
-from dimos.core.skill_module import SkillModule
+from dimos.core.module import Module
 from dimos.core.stream import In, Out
 from dimos.models.qwen.video_query import BBox
 from dimos.models.segmentation.edge_tam import EdgeTAMProcessor
@@ -31,7 +32,6 @@ from dimos.msgs.sensor_msgs import CameraInfo, Image, PointCloud2
 from dimos.navigation.visual.query import get_object_bbox_from_image
 from dimos.navigation.visual_servoing.detection_navigation import DetectionNavigation
 from dimos.navigation.visual_servoing.visual_servoing_2d import VisualServoing2D
-from dimos.protocol.skill.skill import skill
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 logger = setup_logger()
 
 
-class PersonFollowSkillContainer(SkillModule):
+class PersonFollowSkillContainer(Module):
     """Skill container for following a person.
 
     This skill uses:
@@ -60,11 +60,11 @@ class PersonFollowSkillContainer(SkillModule):
     def __init__(
         self,
         camera_info: CameraInfo,
-        global_config: GlobalConfig,
+        cfg: GlobalConfig,
         use_3d_navigation: bool = False,
     ) -> None:
         super().__init__()
-        self._global_config: GlobalConfig = global_config
+        self._global_config: GlobalConfig = cfg
         self._use_3d_navigation: bool = use_3d_navigation
         self._latest_image: Image | None = None
         self._latest_pointcloud: PointCloud2 | None = None
@@ -75,7 +75,7 @@ class PersonFollowSkillContainer(SkillModule):
 
         # Use MuJoCo camera intrinsics in simulation mode
         if self._global_config.simulation:
-            from dimos.robot.unitree_webrtc.mujoco_connection import MujocoConnection
+            from dimos.robot.unitree.mujoco_connection import MujocoConnection
 
             camera_info = MujocoConnection.camera_info_static
 
@@ -102,7 +102,7 @@ class PersonFollowSkillContainer(SkillModule):
         self._vl_model.stop()
         super().stop()
 
-    @skill()
+    @skill
     def follow_person(self, query: str) -> str:
         """Follow a person matching the given description using visual servoing.
 
@@ -141,7 +141,7 @@ class PersonFollowSkillContainer(SkillModule):
 
         return self._follow_loop(query, initial_bbox)
 
-    @skill()
+    @skill
     def stop_following(self) -> str:
         """Stop following the current person.
 
