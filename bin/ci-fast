@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 echo "Ensuring pip versions are correct"
 time uv sync --frozen --extra misc --extra visualization --extra agents --extra web --extra perception --extra unitree --extra manipulation --extra cpu --extra dev --extra sim --extra drone --extra base
 
