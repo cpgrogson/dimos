@@ -6,7 +6,7 @@ branch="$(git rev-parse --abbrev-ref HEAD)"
 
 # based on: https://github.com/dimensionalOS/wiki/wiki
 allowed_types="feat fix chore refactor docs"
-allowed_names="stash ivan pauln alexl mustafa miguel christie ruthwik jalaj yashas yash matt jing juan jeff unknown"
+allowed_names="stash ivan paul alexl mustafa miguel christie ruthwik jalaj yashas yash matt jing juan jeff unknown"
 
 if [[ "$branch" != */*/* ]]; then
   echo "Invalid branch name: '$branch'"
