@@ -384,10 +384,6 @@ ignore_missing_imports = true
 module = ["dimos.rxpy_backpressure", "dimos.rxpy_backpressure.*"]
 follow_imports = "skip"
 
-[[tool.mypy.overrides]]
-module = ["pydrake", "pydrake.*"]
-follow_imports = "skip"
-
 [tool.pytest.ini_options]
 testpaths = ["dimos"]
 markers = [
