@@ -32,6 +32,6 @@ __getattr__, __dir__, __all__ = lazy.attach(
         "perceptive.unitree_g1_detection": ["unitree_g1_detection"],
         "perceptive.unitree_g1_shm": ["unitree_g1_shm"],
         "perceptive.unitree_g1_sim": ["unitree_g1_sim"],
-        "primitive.uintree_g1_primitive_no_nav": ["uintree_g1_primitive_no_nav", "basic_no_nav"],
+        "primitive.unitree_g1_primitive_no_nav": ["unitree_g1_primitive_no_nav", "basic_no_nav"],
     },
 )
