@@ -193,7 +193,7 @@ class BufferConfiguratorLinux(SystemConfigurator):
     def explanation(self) -> str | None:
         lines = []
         for key, target in self.needs:
-            lines.append(f"- socket buffer optimization: sudo sysctl -w {key}={target}")
+            lines.append(f"- socket buffer optimization for LCM: sudo sysctl -w {key}={target}")
         return "\n".join(lines)
 
     def fix(self) -> None:
@@ -230,7 +230,7 @@ class BufferConfiguratorMacOS(SystemConfigurator):
     def explanation(self) -> str | None:
         lines = []
         for key, target in self.needs:
-            lines.append(f"- socket buffer optimization: sudo sysctl -w {key}={target}")
+            lines.append(f"- socket buffer optimization for LCM: sudo sysctl -w {key}={target}")
         return "\n".join(lines)
 
     def fix(self) -> None:
@@ -270,11 +270,15 @@ class MaxFileConfiguratorMacOS(SystemConfigurator):
     def explanation(self) -> str | None:
         lines = []
         if self.can_fix_without_sudo:
-            lines.append(f"- Raise soft file count limit to {self.target} (no sudo required)")
-        else:
-            lines.append(f"- Raise soft file count limit to {min(self.target, self.current_hard)}")
             lines.append(
-                f"- Raise hard limit via: sudo launchctl limit maxfiles {self.target} {self.target}"
+                f"- Raise soft file count limit to {self.target} for LCM (no sudo required)"
+            )
+        else:
+            lines.append(
+                f"- Raise soft file count limit to {min(self.target, self.current_hard)} for LCM"
+            )
+            lines.append(
+                f"- Raise hard limit via: sudo launchctl limit maxfiles {self.target} {self.target} for LCM"
             )
         return "\n".join(lines)
 

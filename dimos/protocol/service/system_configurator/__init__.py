@@ -35,7 +35,7 @@ from dimos.protocol.service.system_configurator.lcm import (
 )
 
 
-# TODO: This is a configurator API issue
+# TODO: This is a configurator API issue and inserted here temporarily
 #
 # We need to use different configurators based on the underlying OS
 #
@@ -58,7 +58,7 @@ def lcm_configurators() -> list[SystemConfigurator]:
         return [
             MulticastConfiguratorMacOS(loopback_interface="lo0"),
             BufferConfiguratorMacOS(),
-            MaxFileConfiguratorMacOS(),
+            MaxFileConfiguratorMacOS(),  # TODO: this is not LCM related and shouldn't be here at all
         ]
     return []
 

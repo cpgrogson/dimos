@@ -116,15 +116,8 @@ class ClockSyncConfigurator(SystemConfigurator):
             cmd = "(no NTP tool found — install ntpdate or sntp, then re-run)"
         hint = ""
         if platform.system() == "Linux":
-            hint = (
-                "\n  Alternatively, enable automatic time sync:"
-                " sudo systemctl enable --now systemd-timesyncd.service"
-            )
-        return (
-            f"- Clock sync: local clock is off by {human_duration(self._offset)} "
-            f"(threshold: ±{self.MAX_OFFSET_SECONDS * 1000:.0f} ms)\n"
-            f"  Fix: {cmd}{hint}"
-        )
+            hint = "\n  (Alternatively, you can install systemd-timesyncd.service)"
+        return f"- clock sync: local clock is off by {human_duration(self._offset)}: {cmd}{hint}"
 
     def fix(self) -> None:
         if not self._fix_cmd:

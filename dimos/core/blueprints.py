@@ -21,7 +21,10 @@ import inspect
 import operator
 import sys
 from types import MappingProxyType
-from typing import Any, Literal, get_args, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin, get_type_hints
+
+if TYPE_CHECKING:
+    from dimos.protocol.service.system_configurator import SystemConfigurator
 
 from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.module import Module, is_module_type
