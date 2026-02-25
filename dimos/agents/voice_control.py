@@ -35,7 +35,7 @@ class VoiceConfig(ModuleConfig):
     model: str = "gpt-4o"
     model_fixture: str | None = None
     stt_model: str = "base"  # whisper model size: tiny, base, small, medium, large
-    wake_words: list[str] = field(default_factory=lambda: ["hey robot", "hay robot"])
+    wake_words: list[str] = field(default_factory=lambda: ["hey robot", "okay robot", "hay robot"])
     wake_silence_cutoff: float = 0.8  # seconds of silence before checking for wake word
     silence_duration: float = 5.0  # seconds of silence that ends a command recording
     hmm_interval: float = 3.0  # seconds of silence before saying the filler phrase
