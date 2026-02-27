@@ -1,69 +1,49 @@
-# Quest Teleop Web
+# Quest Teleop
 
-WebXR client and server for Quest 3 VR teleoperation.
+Teleoperation via Meta Quest 3 VR controllers. Dual-hand tracking with WebXR.
 
-## Components
+## Architecture
 
-### teleop_server.ts
-
-Deno server that bridges WebSocket and LCM:
-- Serves WebXR client over HTTPS (required for Quest)
-- Forwards controller data from browser to LCM
-
-### static/index.html
-
-WebXR client running on Quest 3:
-- Captures controller poses at ~80Hz
-- Sends PoseStamped and Joy messages via WebSocket
-- Requires internet connection (loads `@dimos/msgs` from CDN at runtime)
+```
+Quest Browser  ──WebSocket──→  Embedded HTTPS Server  ──→  QuestTeleopModule
+(WebXR poses + Joy)             (port 8443)                  (delta → PoseStamped)
+```
 
 ## Running
 
-From the repository root (`dimos/`):
-
 ```bash
-./dimos/teleop/quest/web/teleop_server.ts
+dimos run arm-teleop           # Basic arm teleop
+dimos run arm-teleop-xarm6     # XArm6
+dimos run arm-teleop-piper     # Piper
+dimos run arm-teleop-dual      # Dual arm
 ```
 
-Server starts at `https://localhost:8443`
+Open `https://<host-ip>:8443/teleop` on Quest browser. Accept cert, tap Connect.
 
-SSL certificates are generated automatically on first run in `assets/teleop_certs/`.
+## Subclassing
 
-## Message Flow
+| Method | Purpose |
+|--------|---------|
+| `_handle_engage()` | Customize engage/disengage logic |
+| `_should_publish()` | Add conditions for publishing |
+| `_get_output_pose()` | Customize pose computation |
+| `_publish_msg()` | Change output format |
 
-```
-Quest Browser                    Deno Server                    Python
-    │                                │                             │
-    │── PoseStamped (left) ────────→ │── vr_left_pose ───────────→ │
-    │── PoseStamped (right) ───────→ │── vr_right_pose ──────────→ │
-    │── Joy (left controller) ─────→ │── vr_left_joy ────────────→ │
-    │── Joy (right controller) ────→ │── vr_right_joy ───────────→ │
-```
-
-## LCM Topics
-
-| Topic | Type | Description |
-|-------|------|-------------|
-| `vr_left_pose` | PoseStamped | Left controller pose (WebXR frame) |
-| `vr_right_pose` | PoseStamped | Right controller pose (WebXR frame) |
-| `vr_left_joy` | Joy | Left controller buttons/axes |
-| `vr_right_joy` | Joy | Right controller buttons/axes |
+`self._lock` is already held — don't acquire it in overrides.
 
 ## Joy Message Format
 
-Quest controller data is packed into Joy messages:
+**Axes**: thumbstick X, thumbstick Y, trigger (analog), grip (analog)
 
-**Axes** (indices 0-3):
-- 0: thumbstick X (-1.0 to 1.0)
-- 1: thumbstick Y (-1.0 to 1.0)
-- 2: trigger (analog 0.0-1.0)
-- 3: grip (analog 0.0-1.0)
+**Buttons**: trigger, grip, touchpad, thumbstick, X/A, Y/B, menu
 
-**Buttons** (indices 0-6, digital 0 or 1):
-- 0: trigger (pressed)
-- 1: grip (pressed)
-- 2: touchpad
-- 3: thumbstick press
-- 4: X/A (primary)
-- 5: Y/B (secondary)
-- 6: menu
+## File Structure
+
+```
+quest/
+├── quest_teleop_module.py   # Base module
+├── quest_extensions.py      # ArmTeleop, TwistTeleop, VisualizingTeleop
+├── quest_types.py           # QuestControllerState, Buttons
+├── blueprints.py
+└── web/static/index.html    # WebXR client
+```
