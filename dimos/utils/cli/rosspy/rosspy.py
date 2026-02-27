@@ -66,7 +66,7 @@ class Topic:
     def _get_messages_in_window(self, time_window: float) -> list[tuple[float, int]]:
         current_time = time.time()
         cutoff_time = current_time - time_window
-        return [(ts, size) for ts, size in self.message_history if ts >= cutoff_time]
+        return [(ts, size) for ts, size in list(self.message_history) if ts >= cutoff_time]
 
     def freq(self, time_window: float) -> float:
         messages = self._get_messages_in_window(time_window)
