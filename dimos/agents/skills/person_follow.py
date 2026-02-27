@@ -28,6 +28,7 @@ from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.models.qwen.video_query import BBox
 from dimos.models.segmentation.edge_tam import EdgeTAMProcessor
+from dimos.models.vl.base import VlModel
 from dimos.models.vl.qwen import QwenVlModel
 from dimos.msgs.geometry_msgs import Twist
 from dimos.msgs.sensor_msgs import CameraInfo, Image, PointCloud2
