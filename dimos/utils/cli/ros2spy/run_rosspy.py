@@ -20,36 +20,37 @@ from textual.color import Color
 from textual.widgets import DataTable
 
 from dimos.utils.cli import theme
-from dimos.utils.cli.lcmspy.lcmspy import GraphLCMSpy, GraphTopic as SpyTopic
+from dimos.utils.cli.rosspy.rosspy import ROS_AVAILABLE, GraphROS2Spy, GraphTopic as SpyTopic
 
 
 def gradient(max_value: float, value: float) -> str:
-    """Gradient from cyan (low) to yellow (high) using DimOS theme colors"""
-    ratio = min(value / max_value, 1.0)
-    # Parse hex colors from theme
+    """Gradient from cyan (low) to yellow (high) using DimOS theme colors."""
+    ratio = min(value / max_value, 1.0) if max_value > 0 else 0.0
     cyan = Color.parse(theme.CYAN)
     yellow = Color.parse(theme.YELLOW)
-    color = cyan.blend(yellow, ratio)
-
-    return color.hex
+    return cyan.blend(yellow, ratio).hex
 
 
 def topic_text(topic_name: str) -> Text:
-    """Format topic name with DimOS theme colors"""
-    if "#" in topic_name:
-        parts = topic_name.split("#", 1)
-        return Text(parts[0], style=theme.BRIGHT_WHITE) + Text("#" + parts[1], style=theme.BLUE)
-
-    if topic_name[:4] == "/rpc":
-        return Text(topic_name[:4], style=theme.BLUE) + Text(
-            topic_name[4:], style=theme.BRIGHT_WHITE
-        )
-
+    """Format topic name with DimOS theme colors."""
+    # ROS2 topics start with /; highlight namespace separators
+    parts = topic_name.rsplit("/", 1)
+    if len(parts) == 2 and parts[0]:
+        return Text(parts[0] + "/", style=theme.BLUE) + Text(parts[1], style=theme.BRIGHT_WHITE)
     return Text(topic_name, style=theme.BRIGHT_WHITE)
 
 
-class LCMSpyApp(App):  # type: ignore[type-arg]
-    """A real-time CLI dashboard for LCM traffic statistics using Textual."""
+def type_text(type_str: str) -> Text:
+    """Format ROS2 message type with DimOS theme colors."""
+    # type_str looks like "std_msgs/msg/String"
+    parts = type_str.rsplit("/", 1)
+    if len(parts) == 2:
+        return Text(parts[0] + "/", style=theme.DIM) + Text(parts[1], style=theme.CYAN)
+    return Text(type_str, style=theme.CYAN)
+
+
+class ROS2SpyApp(App):  # type: ignore[type-arg]
+    """A real-time CLI dashboard for ROS 2 topic traffic statistics using Textual."""
 
     CSS_PATH = "../dimos.tcss"
 
@@ -71,27 +72,34 @@ class LCMSpyApp(App):  # type: ignore[type-arg]
     }}
     """
 
-    refresh_interval: float = 0.5  # seconds
+    refresh_interval: float = 0.5
 
     BINDINGS = [
         ("q", "quit"),
         ("ctrl+c", "quit"),
     ]
 
-    def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-        self.spy = GraphLCMSpy(autoconf=True, graph_log_window=0.5)
+        self.spy = GraphROS2Spy(graph_log_window=0.5)
         self.table: DataTable | None = None  # type: ignore[type-arg]
 
     def compose(self) -> ComposeResult:
         self.table = DataTable(zebra_stripes=False, cursor_type=None)  # type: ignore[arg-type]
         self.table.add_column("Topic")
+        self.table.add_column("Type")
         self.table.add_column("Freq (Hz)")
         self.table.add_column("Bandwidth")
         self.table.add_column("Total Traffic")
         yield self.table
 
     def on_mount(self) -> None:
+        if not ROS_AVAILABLE:
+            self.exit(
+                message="ROS 2 (rclpy) is not available.\n"
+                "Source a ROS 2 installation before running rosspy."
+            )
+            return
         self.spy.start()
         self.set_interval(self.refresh_interval, self.refresh_table)
 
@@ -99,7 +107,7 @@ class LCMSpyApp(App):  # type: ignore[type-arg]
         self.spy.stop()
 
     def refresh_table(self) -> None:
-        topics: list[SpyTopic] = list(self.spy.topic.values())  # type: ignore[arg-type, call-arg]
+        topics: list[SpyTopic] = list(self.spy.topic.values())  # type: ignore[arg-type]
         topics.sort(key=lambda t: t.total_traffic(), reverse=True)
         self.table.clear(columns=False)  # type: ignore[union-attr]
 
@@ -109,6 +117,7 @@ class LCMSpyApp(App):  # type: ignore[type-arg]
 
             self.table.add_row(  # type: ignore[union-attr]
                 topic_text(t.name),
+                type_text(t.msg_type),
                 Text(f"{freq:.1f}", style=gradient(10, freq)),
                 Text(t.kbps_hr(5.0), style=gradient(1024 * 3, kbps)),
                 Text(t.total_traffic_hr()),
@@ -126,7 +135,7 @@ def main() -> None:
         server = Server(f"python {os.path.abspath(__file__)}")
         server.serve()
     else:
-        LCMSpyApp().run()
+        ROS2SpyApp().run()
 
 
 if __name__ == "__main__":
