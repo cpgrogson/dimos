@@ -162,7 +162,7 @@ class ROSNavConfig(DockerModuleConfig):
             ),
             # Mount DDS config (fastdds.xml) from host — matches docker-compose ./config mount
             (str(repo_root / "docker" / "navigation" / "config"), "/ros2_ws/config", "rw"),
-            # Mount Unity environment (map.ply, traversable_area.ply, etc.) into the ROS workspace
+            # Mount Unity environment (map.pwly, traversable_area.ply, etc.) into the ROS workspace
             (
                 str(
                     repo_root
@@ -175,7 +175,7 @@ class ROSNavConfig(DockerModuleConfig):
                     / "mesh"
                     / "unity"
                 ),
-                "/ros2_ws/src/base_autonomy/vehicle_simulator/mesh/unity",
+                "/ros2_ws/src/ros-navigation-autonomy-stack/src/base_autonomy/vehicle_simulator/mesh/unity/",
                 "rw",
             ),
             # X11 socket for display forwarding (RViz, Unity)
