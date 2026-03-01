@@ -186,6 +186,11 @@ class SubscribeAllCapable(Protocol[MsgT_co, TopicT_co]):
     Both AllPubSub (native) and DiscoveryPubSub (synthesized) satisfy this.
     """
 
-    def subscribe_all(self, callback: Callable[[Any, Any], Any]) -> Callable[[], None]:
+    def subscribe_all(self, callback: Callable[[MsgT_co, TopicT_co], Any]) -> Callable[[], None]:
         """Subscribe to all messages on all topics."""
         ...
+
+
+# there should probably be more type-based enforcement of this on TopicT, but this is iterative improvement
+def topic_to_str(topic: Any):
+    return getattr(topic, "name", None) or str(topic)

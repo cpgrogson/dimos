@@ -37,6 +37,7 @@ from dimos.core import Module, rpc
 from dimos.core.module import ModuleConfig
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.protocol.pubsub.patterns import Glob, pattern_matches
+from dimos.protocol.pubsub.spec import topic_to_str
 from dimos.utils.logging_config import setup_logger
 
 RERUN_GRPC_PORT = 9876
@@ -158,6 +159,7 @@ class Config(ModuleConfig):
     entity_prefix: str = "world"
     topic_to_entity: Callable[[Any], str] | None = None
     viewer_mode: ViewerMode = "native"
+    viewer_debug: bool = False
     memory_limit: str = "25%"
 
     # Blueprint factory: callable(rrb) -> Blueprint for viewer layout configuration
@@ -183,6 +185,12 @@ class RerunBridgeModule(Module):
 
     default_config = Config
     config: Config
+
+    _topics_decided: set[str]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._topics_decided = set()
 
     @lru_cache(maxsize=256)
     def _visual_override_for_entity_path(
@@ -225,7 +233,7 @@ class RerunBridgeModule(Module):
             return self.config.topic_to_entity(topic)
 
         # Default: use topic.name if available (LCM Topic), else str
-        topic_str = getattr(topic, "name", None) or str(topic)
+        topic_str = topic_to_str(topic)
         # Strip everything after # (LCM topic suffix)
         topic_str = topic_str.split("#")[0]
         return f"{self.config.entity_prefix}{topic_str}"
@@ -236,9 +244,24 @@ class RerunBridgeModule(Module):
 
         # convert a potentially complex topic object into an str rerun entity path
         entity_path: str = self._get_entity_path(topic)
+        topic_str = topic_to_str(topic)
+        topic_key = topic_str.split("#")[0]
 
         # apply visual overrides (including final_convert which handles .to_rerun())
         rerun_data: RerunData | None = self._visual_override_for_entity_path(entity_path)(msg)
+
+        if self.config.viewer_debug and topic_key not in self._topics_decided:
+            if rerun_data:
+                logger.info(
+                    f"rerun bridge first message decision: LOG topic={topic_key} entity={entity_path}"
+                )
+            else:
+                logger.info(
+                    "rerun bridge first message decision: "
+                    f"IGNORE topic={topic_key} entity={entity_path} "
+                    f"msg_class={msg.__class__.__name__} msg_repr={msg!r}"
+                )
+            self._topics_decided.add(topic_key)
 
         # converters can also suppress logging by returning None
         if not rerun_data:
@@ -303,6 +326,7 @@ class RerunBridgeModule(Module):
 
 def run_bridge(
     viewer_mode: str = "native",
+    viewer_debug: bool = False,
     memory_limit: str = "25%",
 ) -> None:
     """Start a RerunBridgeModule with default LCM config and block until interrupted."""
@@ -310,6 +334,7 @@ def run_bridge(
 
     bridge = RerunBridgeModule(
         viewer_mode=viewer_mode,
+        viewer_debug=viewer_debug,
         memory_limit=memory_limit,
         # any pubsub that supports subscribe_all and topic that supports str(topic)
         # is acceptable here
@@ -330,12 +355,21 @@ def cli(
     viewer_mode: str = typer.Option(
         "native", help="Viewer mode: native (desktop), web (browser), none (headless)"
     ),
+    viewer_debug: bool = typer.Option(
+        False,
+        "--viewer-debug",
+        help="Enable per-topic first-message debug decisions (LOG/IGNORE)",
+    ),
     memory_limit: str = typer.Option(
         "25%", help="Memory limit for Rerun viewer (e.g., '4GB', '16GB', '25%')"
     ),
 ) -> None:
     """Rerun bridge for LCM messages."""
-    run_bridge(viewer_mode=viewer_mode, memory_limit=memory_limit)
+    run_bridge(
+        viewer_mode=viewer_mode,
+        viewer_debug=viewer_debug,
+        memory_limit=memory_limit,
+    )
 
 
 if __name__ == "__main__":
