@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Live TUI for per-worker resource stats over LCM.
+"""dtop — Live TUI for per-worker resource stats over LCM.
 
 Usage:
     uv run python -m dimos.utils.cli.dtop [--topic /dimos/resource_stats]
@@ -139,7 +139,7 @@ def _compute_ranges(data_dicts: list[dict[str, Any]]) -> dict[str, tuple[float, 
 # ---------------------------------------------------------------------------
 
 
-class ResourceSpyApp(App):  # type: ignore[type-arg]
+class ResourceSpyApp(App[None]):
     CSS_PATH = "dimos.tcss"
 
     TITLE = ""

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from dimos.core.core import rpc
@@ -19,6 +21,9 @@ from dimos.core.module import Module
 from dimos.core.stream import In, Out
 from dimos.core.worker_manager import WorkerManager
 from dimos.msgs.geometry_msgs import Vector3
+
+if TYPE_CHECKING:
+    from dimos.core.resource_monitor.stats import WorkerStats
 
 
 class SimpleModule(Module):
@@ -167,13 +172,30 @@ def test_worker_manager_parallel_deployment(create_worker_manager):
 
 @pytest.mark.slow
 def test_collect_stats(create_worker_manager):
+    from dimos.core.resource_monitor.monitor import StatsMonitor
+
     manager = create_worker_manager(n_workers=2)
     module1 = manager.deploy(SimpleModule)
     module2 = manager.deploy(AnotherModule)
     module1.start()
     module2.start()
 
-    stats = manager.collect_stats()
+    # Use a capturing logger to collect stats via StatsMonitor
+    captured: list[list[WorkerStats]] = []
+
+    class CapturingLogger:
+        def log_stats(self, coordinator, workers):
+            captured.append(workers)
+
+    monitor = StatsMonitor(manager, resource_logger=CapturingLogger(), interval=0.5)
+    monitor.start()
+    import time
+
+    time.sleep(1.5)
+    monitor.stop()
+
+    assert len(captured) >= 1
+    stats = captured[-1]
     assert len(stats) == 2
 
     for s in stats:

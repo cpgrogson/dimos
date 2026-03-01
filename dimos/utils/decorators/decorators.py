@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from collections.abc import Callable
-from functools import wraps
+from functools import update_wrapper, wraps
 import threading
 import time
-from typing import Any, Protocol, TypeVar, cast
+from typing import Any, Generic, Protocol, TypeVar, cast
 
 from .accumulators import Accumulator, LatestAccumulator
 
@@ -167,30 +167,44 @@ def simple_mcache(method: Callable[..., _CacheReturn]) -> CachedMethod[_CacheRet
     return cast("CachedMethod[_CacheReturn]", getter)
 
 
-def ttl_cache(seconds: float) -> Callable[[_F], _F]:
+class TtlCacheWrapper(Generic[_CacheReturn]):
+    """Wrapper returned by :func:`ttl_cache`.
+
+    Exposes a ``.cache`` dict that maps ``(args_tuple)`` →
+    ``(timestamp, value)`` so callers can inspect or evict entries.
+    """
+
+    cache: dict[tuple[Any, ...], tuple[float, _CacheReturn]]
+
+    def __init__(self, func: Callable[..., _CacheReturn], seconds: float) -> None:
+        self._func = func
+        self._seconds = seconds
+        self.cache = {}
+        update_wrapper(self, func)
+
+    def __call__(self, *args: Any) -> _CacheReturn:
+        now = time.monotonic()
+        expired = [k for k, (ts, _) in self.cache.items() if now - ts >= self._seconds]
+        for k in expired:
+            del self.cache[k]
+        if args in self.cache:
+            _, val = self.cache[args]
+            return val
+        result = self._func(*args)
+        self.cache[args] = (now, result)
+        return result
+
+
+def ttl_cache(
+    seconds: float,
+) -> Callable[[Callable[..., _CacheReturn]], TtlCacheWrapper[_CacheReturn]]:
     """Cache function results by positional args with a time-to-live.
 
     Expired entries are swept on each access.
     """
 
-    def decorator(func: _F) -> _F:
-        _cache: dict[tuple[Any, ...], tuple[float, Any]] = {}
-
-        @wraps(func)
-        def wrapper(*args: Any) -> Any:
-            now = time.monotonic()
-            expired = [k for k, (ts, _) in _cache.items() if now - ts >= seconds]
-            for k in expired:
-                del _cache[k]
-            if args in _cache:
-                _, val = _cache[args]
-                return val
-            result = func(*args)
-            _cache[args] = (now, result)
-            return result
-
-        wrapper.cache = _cache  # type: ignore[attr-defined]
-        return wrapper  # type: ignore[return-value]
+    def decorator(func: Callable[..., _CacheReturn]) -> TtlCacheWrapper[_CacheReturn]:
+        return TtlCacheWrapper(func, seconds)
 
     return decorator
 

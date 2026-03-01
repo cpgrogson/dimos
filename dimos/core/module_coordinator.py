@@ -15,24 +15,18 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-import os
 import threading
 from typing import TYPE_CHECKING, Any
 
 from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.resource import Resource
-from dimos.core.resource_monitor import (
-    LCMResourceLogger,
-    ResourceLogger,
-    collect_process_stats,
-)
 from dimos.core.worker_manager import WorkerManager
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
     from dimos.core.module import Module, ModuleT
+    from dimos.core.resource_monitor.monitor import StatsMonitor
     from dimos.core.rpc_client import ModuleProxy
-    from dimos.core.worker import WorkerStats
 
 logger = setup_logger()
 
@@ -43,16 +37,19 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
     _n: int | None = None
     _memory_limit: str = "auto"
     _deployed_modules: dict[type[Module], ModuleProxy]
+    _stats_monitor: StatsMonitor | None = None
 
     def __init__(
         self,
         n: int | None = None,
         cfg: GlobalConfig = global_config,
+        monitor_stats: bool = False,
     ) -> None:
         self._n = n if n is not None else cfg.n_workers
         self._memory_limit = cfg.memory_limit
         self._global_config = cfg
         self._deployed_modules = {}
+        self.monitor_stats = monitor_stats
 
     def start(self) -> None:
         n = self._n if self._n is not None else 2
@@ -60,6 +57,10 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         self._client.start()
 
     def stop(self) -> None:
+        if self._stats_monitor is not None:
+            self._stats_monitor.stop()
+            self._stats_monitor = None
+
         for module_class, module in reversed(self._deployed_modules.items()):
             logger.info("Stopping module...", module=module_class.__name__)
             try:
@@ -106,28 +107,17 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
     def get_instance(self, module: type[ModuleT]) -> ModuleProxy:
         return self._deployed_modules.get(module)  # type: ignore[return-value, no-any-return]
 
-    def loop(
-        self,
-        resource_logger: ResourceLogger | None = None,
-        monitor_interval: float = 1.0,
-    ) -> None:
-        _logger: ResourceLogger = resource_logger or LCMResourceLogger()
-        coordinator_pid = os.getpid()
-        # Prime cpu_percent so the first real reading isn't 0.0.
-        collect_process_stats(coordinator_pid)
+    def loop(self) -> None:
+        if self.monitor_stats and self._client is not None:
+            from dimos.core.resource_monitor.monitor import StatsMonitor
+
+            self._stats_monitor = StatsMonitor(self._client)
+            self._stats_monitor.start()
 
         stop = threading.Event()
         try:
-            while not stop.wait(monitor_interval):
-                self._log_resource_stats(_logger, coordinator_pid)
+            stop.wait()
         except KeyboardInterrupt:
             return
         finally:
             self.stop()
-
-    def _log_resource_stats(self, _logger: ResourceLogger, coordinator_pid: int) -> None:
-        coordinator = collect_process_stats(coordinator_pid)
-        workers: list[WorkerStats] = []
-        if self._client is not None:
-            workers = self._client.collect_stats()
-        _logger.log_stats(coordinator, workers)

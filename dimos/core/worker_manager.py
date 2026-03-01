@@ -23,7 +23,6 @@ from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
     from dimos.core.module import ModuleT
-    from dimos.core.worker import WorkerStats
 
 logger = setup_logger()
 
@@ -91,9 +90,9 @@ class WorkerManager:
 
         return results
 
-    def collect_stats(self) -> list[WorkerStats]:
-        """Collect resource stats for all worker processes."""
-        return [w.collect_stats() for w in self._workers]
+    @property
+    def workers(self) -> list[Worker]:
+        return list(self._workers)
 
     def close_all(self) -> None:
         if self._closed:

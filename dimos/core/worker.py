@@ -13,13 +13,11 @@
 # limitations under the License.
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
 import multiprocessing as mp
 import threading
 import traceback
 from typing import TYPE_CHECKING, Any
 
-from dimos.core.resource_monitor import ProcessStats, collect_process_stats
 from dimos.utils.logging_config import setup_logger
 from dimos.utils.sequential_ids import SequentialIds
 
@@ -29,14 +27,6 @@ if TYPE_CHECKING:
     from dimos.core.module import ModuleT
 
 logger = setup_logger()
-
-
-@dataclass(frozen=True)
-class WorkerStats(ProcessStats):
-    """Process stats extended with worker-specific metadata."""
-
-    worker_id: int = -1
-    modules: list[str] = field(default_factory=list)
 
 
 class ActorFuture:
@@ -164,16 +154,21 @@ class Worker:
     def module_count(self) -> int:
         return len(self._modules) + self._reserved
 
-    def collect_stats(self) -> WorkerStats:
-        """Collect resource stats for this worker's process."""
-        modules = [actor._cls.__name__ for actor in self._modules.values()]
+    @property
+    def pid(self) -> int | None:
+        """PID of the worker process, or ``None`` if not alive."""
         if self._process is not None and self._process.is_alive():
-            pid = self._process.pid
-            if pid is None:
-                return WorkerStats(pid=0, alive=False, worker_id=self._worker_id, modules=modules)
-            ps = collect_process_stats(pid)
-            return WorkerStats(**asdict(ps), worker_id=self._worker_id, modules=modules)
-        return WorkerStats(pid=0, alive=False, worker_id=self._worker_id, modules=modules)
+            p: int | None = self._process.pid
+            return p
+        return None
+
+    @property
+    def worker_id(self) -> int:
+        return self._worker_id
+
+    @property
+    def module_names(self) -> list[str]:
+        return [actor._cls.__name__ for actor in self._modules.values()]
 
     def reserve_slot(self) -> None:
         """Reserve a slot so _select_worker() sees the pending load."""

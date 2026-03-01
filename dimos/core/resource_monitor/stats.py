@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TypedDict
 
 import psutil
@@ -127,5 +127,13 @@ def collect_process_stats(pid: int) -> ProcessStats:
         return ProcessStats(pid=pid, alive=True, pss=pss, **cpu, **io, **proc_stats)
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         _proc_cache.pop(pid, None)
-        _collect_pss.cache.pop((pid,), None)  # type: ignore[attr-defined]
+        _collect_pss.cache.pop((pid,), None)
         return ProcessStats(pid=pid, alive=False)
+
+
+@dataclass(frozen=True)
+class WorkerStats(ProcessStats):
+    """Process stats extended with worker-specific metadata."""
+
+    worker_id: int = -1
+    modules: list[str] = field(default_factory=list)
