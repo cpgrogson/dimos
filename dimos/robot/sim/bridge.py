@@ -99,7 +99,11 @@ class DimSimBridge(NativeModule, spec.Camera, spec.Pointcloud):
         dimsim_path = shutil.which("dimsim") or str(Path.home() / ".deno" / "bin" / "dimsim")
         self.config.executable = dimsim_path
         self.config.extra_args = [
-            "dev", "--scene", self.config.scene, "--port", str(self.config.port),
+            "dev",
+            "--scene",
+            self.config.scene,
+            "--port",
+            str(self.config.port),
         ]
         self.config.cwd = None
 
