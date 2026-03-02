@@ -423,13 +423,13 @@ prompt_setup_method() {
     if [[ "$HAS_NIX" == "1" ]]; then
         choice=$(prompt_select "How should we set up system dependencies?" \
             "System packages — apt/brew (simpler)" \
-            "Nix — nix develop (reproducible)")
+            "Nix — nix develop (dev mode only, reproducible)")
     elif [[ "$DETECTED_OS" == "nixos" ]]; then
         die "NixOS detected but 'nix' command not found."
     else
         choice=$(prompt_select "How should we set up system dependencies?" \
             "System packages — apt/brew (recommended)" \
-            "Install Nix — nix develop (reproducible, installs Nix first)") || die "cancelled"
+            "Install Nix — nix develop (dev mode only, reproducible)") || die "cancelled"
     fi
 
     case "$choice" in
@@ -893,6 +893,15 @@ main() {
     fi
 
     prompt_install_mode
+
+    # Nix only works with dev mode (nix LD_LIBRARY_PATH conflicts with pip wheels)
+    if [[ "$USE_NIX" == "1" ]] && [[ "$INSTALL_MODE" == "library" ]]; then
+        warn "Nix is not compatible with library installs (LD_LIBRARY_PATH conflicts with pip wheels)"
+        info "switching to system packages for library mode"
+        USE_NIX=0; SETUP_METHOD="system"
+        install_system_deps
+    fi
+
     prompt_extras
     do_install
     configure_system
