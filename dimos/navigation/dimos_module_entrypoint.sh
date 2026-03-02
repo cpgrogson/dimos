@@ -10,6 +10,10 @@ BAGFILE_PATH="${BAGFILE_PATH:-}"
 UNITY_BRIDGE_CONNECT_TIMEOUT_SEC="${UNITY_BRIDGE_CONNECT_TIMEOUT_SEC:-25}"
 UNITY_BRIDGE_RETRY_INTERVAL_SEC="${UNITY_BRIDGE_RETRY_INTERVAL_SEC:-2}"
 
+# Tune kernel TCP buffers for high-bandwidth data transmission (lidar, etc.)
+sysctl -w net.core.rmem_max=67108864 net.core.rmem_default=67108864 2>/dev/null || true
+sysctl -w net.core.wmem_max=67108864 net.core.wmem_default=67108864 2>/dev/null || true
+
 STACK_ROOT="/ros2_ws/src/ros-navigation-autonomy-stack"
 UNITY_EXECUTABLE="${STACK_ROOT}/src/base_autonomy/vehicle_simulator/mesh/unity/environment/Model.x86_64"
 UNITY_MESH_DIR="${STACK_ROOT}/src/base_autonomy/vehicle_simulator/mesh/unity"
@@ -363,13 +367,6 @@ elif [ "$MODE" = "hardware" ]; then
 
     # --- Hardware sensor / network setup ---
 
-    # Tune kernel TCP buffers for high-bandwidth WiFi transmission
-    if [ "${ENABLE_WIFI_BUFFER:-false}" = "true" ]; then
-        echo "[entrypoint] Tuning WiFi TCP buffers..."
-        sysctl -w net.core.rmem_max=67108864 net.core.rmem_default=67108864 2>/dev/null || true
-        sysctl -w net.core.wmem_max=67108864 net.core.wmem_default=67108864 2>/dev/null || true
-    fi
-
     # Assign static IP to the ethernet interface connected to the Mid-360 lidar
     if [ -n "${LIDAR_INTERFACE}" ] && [ -n "${LIDAR_COMPUTER_IP}" ]; then
         echo "[entrypoint] Configuring ${LIDAR_INTERFACE} for Mid-360 lidar (IP: ${LIDAR_COMPUTER_IP})..."
@@ -417,22 +414,6 @@ EOF
             robot_ip:="${UNITREE_IP:-192.168.12.1}" \
             connection_method:="${UNITREE_CONN:-LocalAP}" &
     fi
-
-    # Start twist relay: converts /foxglove_teleop Twist → /cmd_vel TwistStamped
-    if [ -f "/usr/local/bin/twist_relay.py" ]; then
-        echo "[entrypoint] Starting Twist relay..."
-        python3 /usr/local/bin/twist_relay.py &
-    fi
-
-    # Start goal autonomy relay: publishes Joy to enable autonomy when goal_pose received
-    if [ -f "/usr/local/bin/goal_autonomy_relay.py" ]; then
-        echo "[entrypoint] Starting Goal Autonomy relay..."
-        python3 /usr/local/bin/goal_autonomy_relay.py &
-    fi
-
-    # Start Foxglove Bridge for remote monitoring / teleop
-    echo "[entrypoint] Starting Foxglove Bridge on port 8765..."
-    ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
 elif [ "$MODE" = "bagfile" ]; then 
     if [ "$USE_ROUTE_PLANNER" = "true" ]; then
         LAUNCH_FILE="system_bagfile_with_route_planner.launch.py"
@@ -475,7 +456,7 @@ elif ! [ "$USE_RVIZ" = "false" ]; then
 fi
 
 
-# Convert /foxglove_teleop Twist → /cmd_vel TwistStamped
+# Convert /foxglove_teleop Twist → /cmd_vel TwistStamped, goal relay, and Foxglove Bridge
 if [ "$ENABLE_FOXGLOVE" = "true" ]; then
     if [ -f "/usr/local/bin/twist_relay.py" ]; then
         python3 /usr/local/bin/twist_relay.py &
@@ -483,10 +464,14 @@ if [ "$ENABLE_FOXGLOVE" = "true" ]; then
         echo "unable to start foxglove relay!"
         exit 21
     fi
+    if [ -f "/usr/local/bin/goal_autonomy_relay.py" ]; then
+        python3 /usr/local/bin/goal_autonomy_relay.py &
+    fi
+    ros2 launch foxglove_bridge foxglove_bridge_launch.xml port:=8765 &
 elif ! [ "$ENABLE_FOXGLOVE" = "false" ]; then
     echo "ENABLE_FOXGLOVE must be true or false but got: $ENABLE_FOXGLOVE"
     exit 22
-fi 
+fi
 
 # start module (when being run from )
 if [ "$#" -gt 0 ]; then

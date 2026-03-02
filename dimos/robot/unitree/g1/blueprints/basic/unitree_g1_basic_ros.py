@@ -36,7 +36,6 @@ unitree_g1_basic_ros = autoconnect(
         lidar_ip="192.168.123.120",
         unitree_ip="192.168.12.1",
         unitree_conn="LocalAP",
-        enable_wifi_buffer=True,
     ),
 )
 

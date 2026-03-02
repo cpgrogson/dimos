@@ -166,14 +166,12 @@ class ROSNavConfig(DockerModuleConfig):
     # lidar_ip: IP address of the Mid-360 lidar device itself
     # unitree_ip: Unitree robot IP for WebRTC connection
     # unitree_conn: WebRTC connection method — "LocalAP", "LocalSTA", or "Remote"
-    # enable_wifi_buffer: tune kernel TCP buffers for high-bandwidth WiFi transmission
     lidar_interface: str = ""
     lidar_computer_ip: str = ""
     lidar_gateway: str = ""
     lidar_ip: str = ""
     unitree_ip: str = "192.168.12.1"
     unitree_conn: str = "LocalAP"
-    enable_wifi_buffer: bool = False
 
     def __post_init__(self) -> None:
         import os
@@ -192,7 +190,6 @@ class ROSNavConfig(DockerModuleConfig):
             self.docker_env["LIDAR_IP"] = self.lidar_ip
             self.docker_env["UNITREE_IP"] = self.unitree_ip
             self.docker_env["UNITREE_CONN"] = self.unitree_conn
-            self.docker_env["ENABLE_WIFI_BUFFER"] = "true" if self.enable_wifi_buffer else "false"
 
         if self.bagfile_path:
             bag_path = Path(self.bagfile_path).expanduser()
