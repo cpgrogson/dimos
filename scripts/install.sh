@@ -577,6 +577,36 @@ do_install_library() {
     info "library install → ${dir}"
     run_cmd "mkdir -p '$dir'"
 
+    # Show what we're about to do
+    printf "\n"
+    info "next step: create .venv and install Python packages"
+    if [[ "$USE_NIX" == "1" ]]; then
+        dim "  will run: ${CYAN}cd ${dir} && nix develop --command bash -c \"uv venv && uv pip install 'dimos[${EXTRAS}]'\"${RESET}"
+        dim "  nix develop provides system libraries (libGL, mesa, etc.)"
+    else
+        dim "  will run: ${CYAN}cd ${dir} && uv venv --python 3.12 && uv pip install \"dimos[${EXTRAS}]\"${RESET}"
+    fi
+    printf "\n"
+
+    if ! prompt_confirm "Install dependencies now?" "yes"; then
+        dim "  skipping dependency install"
+        printf "\n"
+        dim "  to install later, run:"
+        dim "    cd ${dir}"
+        if [[ "$USE_NIX" == "1" ]]; then
+            dim "    nix develop"
+            dim "    uv venv --python 3.12"
+            dim "    source .venv/bin/activate"
+            dim "    uv pip install \"dimos[${EXTRAS}]\""
+        else
+            dim "    uv venv --python 3.12"
+            dim "    source .venv/bin/activate"
+            dim "    uv pip install \"dimos[${EXTRAS}]\""
+        fi
+        ok "project directory created at ${dir}"
+        return
+    fi
+
     if [[ "$USE_NIX" == "1" ]]; then
         info "downloading flake files..."
         local base="https://raw.githubusercontent.com/dimensionalOS/dimos/refs/heads/${GIT_BRANCH}"
@@ -603,24 +633,6 @@ do_install_library() {
             (cd "$dir" && nix develop --command bash -c "set -euo pipefail; [[ \"\${SKIP_VENV:-}\" != 1 ]] && ${venv_flag} uv venv --python 3.12; source .venv/bin/activate; uv pip install 'dimos[${EXTRAS}]'")
         fi
     else
-        # Show what we're about to do and ask
-        printf "\n"
-        info "next step: create .venv and install Python packages"
-        dim "  will run: ${CYAN}cd ${dir} && uv venv --python 3.12 && uv pip install \"dimos[${EXTRAS}]\"${RESET}"
-        printf "\n"
-
-        if ! prompt_confirm "Install dependencies now?" "yes"; then
-            dim "  skipping dependency install"
-            printf "\n"
-            dim "  to install later, run:"
-            dim "    cd ${dir}"
-            dim "    uv venv --python 3.12"
-            dim "    source .venv/bin/activate"
-            dim "    uv pip install \"dimos[${EXTRAS}]\""
-            ok "project directory created at ${dir}"
-            return
-        fi
-
         if [[ -d "${dir}/.venv" ]] && [[ "$DRY_RUN" != "1" ]]; then
             warn "existing .venv found in ${dir}/"
             if prompt_confirm "Replace existing virtual environment?" "no"; then
