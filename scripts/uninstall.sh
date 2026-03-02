@@ -130,6 +130,12 @@ if [[ -d /nix ]]; then
             sudo rm -rf /nix /etc/nix
             sudo rm -f /etc/profile.d/nix.sh /etc/profile.d/nix-daemon.sh
             rm -rf "$HOME/.nix-profile" "$HOME/.nix-defexpr" "$HOME/.nix-channels" "$HOME/.config/nix"
+            # Restore shell rc backups that Nix created (prevents reinstall failures)
+            for rc in /etc/bashrc /etc/bash.bashrc /etc/zshrc; do
+                if [[ -f "${rc}.backup-before-nix" ]]; then
+                    sudo mv "${rc}.backup-before-nix" "$rc"
+                fi
+            done
             for i in $(seq 1 32); do sudo userdel "nixbld$i" 2>/dev/null || true; done
             sudo groupdel nixbld 2>/dev/null || true
             ok "Nix removed (open a new shell to clear environment)"
