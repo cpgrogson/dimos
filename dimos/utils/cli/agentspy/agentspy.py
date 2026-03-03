@@ -63,7 +63,9 @@ class AgentMessageMonitor:
 
     def start(self) -> None:
         """Start monitoring messages."""
-        self.transport.subscribe(self.topic, self._handle_message)
+        from dimos.protocol.pubsub.impl.lcmpubsub import Topic
+
+        self.transport.subscribe(Topic(self.topic), self._handle_message)
 
     def stop(self) -> None:
         """Stop monitoring."""
