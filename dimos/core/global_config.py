@@ -66,6 +66,10 @@ class GlobalConfig(BaseSettings):
             return "replay"
         if self.simulation:
             return "mujoco"
+        # Use native SDK for G1 onboard control
+        if self.robot_model == "unitree_g1":
+            return "onboard"
+        # Default to WebRTC for Go2
         return "webrtc"
 
     @property

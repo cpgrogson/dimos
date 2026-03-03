@@ -15,9 +15,9 @@
 from typing import Protocol
 
 from dimos.core import Out
-from dimos.msgs.geometry_msgs import Twist
-from dimos.spec.utils import Spec
+from dimos.msgs.sensor_msgs import PointCloud2
 
 
-class LocalPlanner(Spec, Protocol):
-    cmd_vel: Out[Twist]
+# Every form of the G1 (Simulation, Replay, Sdk) needs to implement this spec
+class G1Api(Protocol):
+    global_pointcloud: Out[PointCloud2]

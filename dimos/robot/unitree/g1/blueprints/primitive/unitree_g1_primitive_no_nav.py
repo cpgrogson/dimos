@@ -86,7 +86,7 @@ _camera = (
                 child_frame_id="camera_link",
             ),
             hardware=lambda: Webcam(
-                camera_index=0,
+                camera_index=2,  # video2 works reliably (640x480)
                 fps=15,
                 stereo_slice="left",
                 camera_info=zed.CameraInfo.SingleWebcam,

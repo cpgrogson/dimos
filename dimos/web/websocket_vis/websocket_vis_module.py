@@ -162,11 +162,16 @@ class WebsocketVisModule(Module):
             global _browser_opened
             with _browser_open_lock:
                 if not _browser_opened:
-                    try:
-                        webbrowser.open_new_tab(url)
-                        _browser_opened = True
-                    except Exception as e:
-                        logger.debug(f"Failed to open browser: {e}")
+                    # Open browser in a separate thread to avoid blocking if no display
+                    def open_browser_async():
+                        try:
+                            webbrowser.open_new_tab(url)
+                        except Exception as e:
+                            logger.debug(f"Failed to open browser: {e}")
+
+                    browser_thread = threading.Thread(target=open_browser_async, daemon=True)
+                    browser_thread.start()
+                    _browser_opened = True
 
         try:
             unsub = self.odom.subscribe(self._on_robot_pose)
