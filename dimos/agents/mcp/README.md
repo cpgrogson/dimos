@@ -1,68 +1,126 @@
-# DimOS MCP Server
+# DimOS MCP Server with OpenClaw
 
-Expose DimOS robot skills via Model Context Protocol. Supports OpenClaw and Claude Code as clients.
+The OpenClaw plugin lives at `dimos/web/plugin_openclaw/`. It bridges DimOS MCP tools into the OpenClaw agent system.
 
-## Setup
+## How It Works
+
+1. DimOS starts a FastAPI MCP server on port 9990, exposing robot skills as JSON-RPC tools
+2. The OpenClaw plugin discovers these tools on startup and registers them with the OpenClaw agent
+3. User sends natural language commands via OpenClaw, which the agent translates into MCP tool calls
+4. Flow: User → OpenClaw Agent → Plugin → HTTP/JSON-RPC → DimOS MCP → Robot
+
+## Prerequisites
+
+If you haven't cloned and installed DimOS yet, follow the [main README](../../README.md) first.
+
+Install pnpm:
+
+```bash
+curl -fsSL https://get.pnpm.io/install.sh | sh -
+```
+
+## Terminal 1 — DimOS MCP server
+
+Install dependencies:
 
 ```bash
 uv sync --extra base --extra unitree
 ```
 
-Start DimOS with MCP:
+For hardware (set `ROBOT_IP` in your environment):
 
 ```bash
+export ROBOT_IP=<YOUR_ROBOT_IP>
 uv run dimos run unitree-go2-agentic-mcp
 ```
 
-This starts the MCP server on `http://localhost:9990/mcp`.
+For simulation:
 
-## OpenClaw
+```bash
+uv run dimos --simulation run unitree-go2-agentic-mcp
+```
 
-The OpenClaw plugin lives at `dimos/web/plugin_openclaw/`. It bridges DimOS MCP tools into the OpenClaw agent system.
+## Terminal 2 — OpenClaw gateway
 
-From the plugin directory:
+First time only — install and configure the plugin:
 
 ```bash
 cd dimos/web/plugin_openclaw
 pnpm install
-# set ANTHROPIC_API_KEY and OPENCLAW_GATEWAY_TOKEN in .env
 pnpm openclaw plugins install -l .
 pnpm openclaw config set plugins.entries.dimos.enabled true
 pnpm openclaw config set gateway.mode local
 ```
 
-Run the gateway (with DimOS MCP already running):
+Set your API keys (first time only):
 
 ```bash
+echo "ANTHROPIC_API_KEY=<YOUR_KEY>" >> ~/.openclaw/.env
+echo "OPENCLAW_GATEWAY_TOKEN=<YOUR_TOKEN>" >> ~/.openclaw/.env
+```
+
+Start the gateway:
+
+```bash
+cd dimos/web/plugin_openclaw
 pnpm openclaw gateway run --port 18789 --verbose
 ```
 
 You should see `dimos: discovered 13 tool(s)` confirming the plugin loaded.
 
-Send commands:
+## Terminal 3 — Send commands
 
 ```bash
+cd dimos/web/plugin_openclaw
 pnpm openclaw agent --session-id dimos-test --message "move forward 1 meter"
 ```
 
 Or use the interactive TUI:
 
 ```bash
+cd dimos/web/plugin_openclaw
 pnpm openclaw tui
 ```
 
-## Claude Code
+# DimOS MCP Server with Claude Code
 
-Add the MCP server:
+## How It Works
+
+1. DimOS starts a FastAPI MCP server on port 9990, exposing robot skills as JSON-RPC tools
+2. Claude Code connects directly to the MCP server over HTTP
+3. User sends natural language commands, which Claude translates into MCP tool calls
+
+## Prerequisites
+
+If you haven't cloned and installed DimOS yet, follow the [main README](../../README.md) first.
+
+## Terminal 1 — DimOS MCP server
+
+Install dependencies:
+
+```bash
+uv sync --extra base --extra unitree
+```
+
+For hardware (set `ROBOT_IP` in your environment):
+
+```bash
+export ROBOT_IP=<YOUR_ROBOT_IP>
+uv run dimos run unitree-go2-agentic-mcp
+```
+
+For simulation:
+
+```bash
+uv run dimos --simulation run unitree-go2-agentic-mcp
+```
+
+## Terminal 2 — Claude Code
+
+Add the MCP server (one-time):
 
 ```bash
 claude mcp add --transport http --scope project dimos http://localhost:9990/mcp
-```
-
-Verify:
-
-```bash
-claude mcp list
 ```
 
 Use robot skills:
@@ -73,18 +131,12 @@ Use robot skills:
 > tag this location as "desk"
 ```
 
-## MCP Inspector
+# MCP Inspector
 
-For manual inspection, use MCP Inspector:
+For manual inspection:
 
 ```bash
 npx -y @modelcontextprotocol/inspector
 ```
 
 Change **Transport Type** to "Streamable HTTP", **URL** to `http://localhost:9990/mcp`, and **Connection Type** to "Direct". Click "Connect".
-
-## How It Works
-
-1. `McpServer` in the blueprint starts a FastAPI server on port 9990
-2. Clients (Claude Code, OpenClaw) connect to `http://localhost:9990/mcp`
-3. Skills are exposed as MCP tools (e.g., `relative_move`, `navigate_with_text`)
