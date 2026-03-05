@@ -344,7 +344,6 @@ RUN cat > ${WORKSPACE}/config/fastdds.xml <<'EOF'
             <transport_id>shm_transport</transport_id>
             <type>SHM</type>
             <segment_size>10485760</segment_size>
-            <max_message_size>1048576</max_message_size>
         </transport_descriptor>
     </transport_descriptors>
 </profiles>
