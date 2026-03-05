@@ -77,26 +77,43 @@ else
     CURRENT_BRANCH=$(git branch --show-current)
     if [ "$CURRENT_BRANCH" != "${TARGET_BRANCH}" ]; then
         echo -e "${YELLOW}Switching from ${CURRENT_BRANCH} to ${TARGET_BRANCH} branch...${NC}"
-        # Stash any local changes (e.g., auto-generated config files)
-        if git stash --quiet 2>/dev/null; then
-            echo -e "${YELLOW}Stashed local changes${NC}"
-        fi
         git fetch ${TARGET_REMOTE} ${TARGET_BRANCH}
         git checkout -B ${TARGET_BRANCH} ${TARGET_REMOTE}/${TARGET_BRANCH}
         echo -e "${GREEN}Switched to ${TARGET_BRANCH} branch${NC}"
     else
         echo -e "${GREEN}Already on ${TARGET_BRANCH} branch${NC}"
-        # Check for local changes before pulling latest
-        if ! git diff --quiet || ! git diff --cached --quiet; then
-            echo -e "${RED}Local changes detected in ros-navigation-autonomy-stack.${NC}"
-            echo -e "${RED}Please commit or discard them before building.${NC}"
-            git status --short
-            exit 1
-        fi
         git fetch ${TARGET_REMOTE} ${TARGET_BRANCH}
         git reset --hard ${TARGET_REMOTE}/${TARGET_BRANCH}
     fi
     cd ..
+fi
+
+# Normalize every tracked file's mtime to the HEAD commit timestamp.
+# git clone and reset --hard assign the current wall-clock time as mtime,
+# so two identical checkouts produce different mtimes and bust Docker's COPY
+# cache even when file content is byte-for-byte identical.  Pinning all mtimes
+# to the commit timestamp makes the cache key deterministic: same commit →
+# same mtimes → cache hit, regardless of when or how the repo was checked out.
+echo -e "${GREEN}Pinning ros-navigation-autonomy-stack file timestamps to HEAD commit...${NC}"
+(
+    cd ros-navigation-autonomy-stack
+    COMMIT_TIME=$(git log -1 --format=%ct)
+    git ls-files -z | xargs -0 touch -d "@${COMMIT_TIME}"
+)
+
+# Create a zip of ros-navigation-autonomy-stack for a stable Docker COPY cache.
+# A zipped file is a single stable artifact — no stray log files or .git metadata
+# can change its checksum between builds.  Delete the zip to force regeneration
+# when the stack source code actually changes.
+ZIP_NAME="ros-navigation-autonomy-stack.ignore.zip"
+if [ ! -f "${ZIP_NAME}" ]; then
+    echo -e "${GREEN}Creating ${ZIP_NAME}...${NC}"
+    zip -r "${ZIP_NAME}" ros-navigation-autonomy-stack/ \
+        --exclude "ros-navigation-autonomy-stack/.git/*" \
+        --exclude "ros-navigation-autonomy-stack/log/*"
+    echo -e "${GREEN}${ZIP_NAME} created${NC}"
+else
+    echo -e "${GREEN}${ZIP_NAME} already exists, skipping creation (delete to regenerate)${NC}"
 fi
 
 if [ ! -d "unity_models" ]; then
