@@ -62,12 +62,13 @@ cd "$SCRIPT_DIR"
 # Use fastlio2 branch which has both arise_slam and FASTLIO2
 TARGET_BRANCH="fastlio2"
 TARGET_REMOTE="origin"
-CLONE_URL="https://github.com/dimensionalOS/ros-navigation-autonomy-stack.git"
+CLONE_URL_SSH="git@github.com:dimensionalOS/ros-navigation-autonomy-stack.git"
+CLONE_URL_HTTPS="https://github.com/dimensionalOS/ros-navigation-autonomy-stack.git"
 
 # Clone or checkout ros-navigation-autonomy-stack
 if [ ! -d "ros-navigation-autonomy-stack" ]; then
     echo -e "${YELLOW}Cloning ros-navigation-autonomy-stack repository (${TARGET_BRANCH} branch)...${NC}"
-    git clone -b ${TARGET_BRANCH} ${CLONE_URL} ros-navigation-autonomy-stack
+    git clone -b ${TARGET_BRANCH} ${CLONE_URL_SSH} ros-navigation-autonomy-stack || git clone -b ${TARGET_BRANCH} ${CLONE_URL_HTTPS} ros-navigation-autonomy-stack
     echo -e "${GREEN}Repository cloned successfully!${NC}"
 else
     # Directory exists, ensure we're on the correct branch
