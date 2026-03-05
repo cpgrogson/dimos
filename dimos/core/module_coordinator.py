@@ -114,19 +114,17 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
                         lambda spec: DockerModule(spec[0], *spec[1], **spec[2]), docker_specs
                     )
                 )
+        specs = worker_specs+docker_specs
+        results = worker_results+docker_results
         
-        for (module_class, _, _), module in zip(worker_specs+docker_specs, worker_results+docker_results, strict=True):
+        for (module_class, _, _), module in zip(specs, results, strict=True):
             self._deployed_modules[module_class] = module
         return results  # type: ignore[return-value]
 
     def start_all_modules(self) -> None:
         modules = list(self._deployed_modules.values())
-        if isinstance(self._client, WorkerManager):
-            with ThreadPoolExecutor(max_workers=max(len(modules), 1)) as executor:
-                list(executor.map(lambda m: m.start(), modules))
-        else:
-            for module in modules:
-                module.start()
+        with ThreadPoolExecutor(max_workers=len(modules)) as executor:
+            list(executor.map(lambda m: m.start(), modules))
 
         for module in modules:
             if hasattr(module, "on_system_modules"):
