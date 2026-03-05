@@ -18,8 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 from typing import TYPE_CHECKING, Any
 
-from dimos.core.docker_runner import is_docker_module
-from dimos.core.docker_worker_manager import DockerWorkerManager
+from dimos.core.docker_runner import DockerModule, is_docker_module
 from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.resource import Resource
 from dimos.core.worker_manager import WorkerManager
@@ -35,7 +34,6 @@ logger = setup_logger()
 
 class ModuleCoordinator(Resource):  # type: ignore[misc]
     _client: WorkerManager | None = None
-    _docker_client: DockerWorkerManager | None = None
     _global_config: GlobalConfig
     _n: int | None = None
     _memory_limit: str = "auto"
@@ -56,7 +54,6 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         n = self._n if self._n is not None else 2
         self._client = WorkerManager(n_workers=n)
         self._client.start()
-        self._docker_client = DockerWorkerManager()
 
         if self._global_config.dtop:
             from dimos.core.resource_monitor.monitor import StatsMonitor
@@ -79,14 +76,30 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
 
         self._client.close_all()  # type: ignore[union-attr]
 
+    def _deploy_docker(self, module_class: type[Module], *args: Any, **kwargs: Any) -> DockerModule:
+        from contextlib import suppress
+
+        logger.info("Deploying module in Docker.", module=module_class.__name__)
+        dm = DockerModule(module_class, *args, **kwargs)
+        try:
+            # why are docker modules started here? shouldn't they be started in start_all_modules?
+            # this is a bigger design problem we have with how blueprints, ModuleCoordinator, and WorkerManager are leaky abstractions with imperfect boundaries
+            # the Stream/RPC wiring (in blueprints) happens after deploy but before start. For docker modules, wiring needs the container's LCM transport to be reachable — which requires the container to be running.
+            # self.rpc.call_sync() send an RPC call to the container during wiring, the container must be running to handle that
+            # if we defer start() to start_all_modules, the container won't be up yet when _connect_streams and _connect_rpc_methods try to wire things
+            dm.start()
+        except Exception:
+            with suppress(Exception):
+                dm.stop()
+            raise
+        return dm
+
     def deploy(self, module_class: type[ModuleT], *args, **kwargs) -> ModuleProxy:  # type: ignore[no-untyped-def]
         if not self._client:
             raise ValueError("Trying to dimos.deploy before the client has started")
 
         if is_docker_module(module_class):
-            if not self._docker_client:
-                self._docker_client = DockerWorkerManager()
-            module = self._docker_client.deploy(module_class, *args, **kwargs)  # type: ignore[assignment]
+            module = self._deploy_docker(module_class, *args, **kwargs)  # type: ignore[assignment]
         else:
             module = self._client.deploy(module_class, *args, **kwargs)  # type: ignore[union-attr, attr-defined, assignment]
 
@@ -119,9 +132,7 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         # Deploy docker modules (each gets its own DockerModule)
         docker_results: list[Any] = []
         for module_class, args, kwargs in docker_specs:
-            if not self._docker_client:
-                self._docker_client = DockerWorkerManager()
-            dm = self._docker_client.deploy(module_class, *args, **kwargs)
+            dm = self._deploy_docker(module_class, *args, **kwargs)
             docker_results.append(dm)
 
         # Reassemble results in original order
@@ -137,9 +148,10 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         return results  # type: ignore[return-value]
 
     def start_all_modules(self) -> None:
-        modules = list(self._deployed_modules.values())
+        # Docker modules are already started during deploy, (see their deploy as to why this is)
+        modules = [m for cls, m in self._deployed_modules.items() if not is_docker_module(cls)]
         if isinstance(self._client, WorkerManager):
-            with ThreadPoolExecutor(max_workers=len(modules)) as executor:
+            with ThreadPoolExecutor(max_workers=max(len(modules), 1)) as executor:
                 list(executor.map(lambda m: m.start(), modules))
         else:
             for module in modules:
