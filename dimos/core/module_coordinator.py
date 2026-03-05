@@ -18,13 +18,14 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 from typing import TYPE_CHECKING, Any
 
+from dimos.core.docker_runner import is_docker_module
+from dimos.core.docker_worker_manager import DockerWorkerManager
 from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.resource import Resource
 from dimos.core.worker_manager import WorkerManager
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
-    from dimos.core.docker_worker_manager import DockerWorkerManager
     from dimos.core.module import Module, ModuleT
     from dimos.core.resource_monitor.monitor import StatsMonitor
     from dimos.core.rpc_client import ModuleProxy
@@ -52,8 +53,6 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         self._deployed_modules = {}
 
     def start(self) -> None:
-        from dimos.core.docker_worker_manager import DockerWorkerManager
-
         n = self._n if self._n is not None else 2
         self._client = WorkerManager(n_workers=n)
         self._client.start()
@@ -86,9 +85,6 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         if not self._client:
             raise ValueError("Trying to dimos.deploy before the client has started")
 
-        from dimos.core.docker_runner import is_docker_module
-        from dimos.core.docker_worker_manager import DockerWorkerManager
-
         if is_docker_module(module_class):
             if not self._docker_client:
                 self._docker_client = DockerWorkerManager()
@@ -104,9 +100,6 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
     ) -> list[ModuleProxy]:
         if not self._client:
             raise ValueError("Not started")
-
-        from dimos.core.docker_runner import is_docker_module
-        from dimos.core.docker_worker_manager import DockerWorkerManager
 
         # Separate docker modules from regular modules
         docker_specs: list[tuple[type[ModuleT], tuple[Any, ...], dict[str, Any]]] = []
