@@ -98,6 +98,9 @@ class DockerModuleConfig(ModuleConfig):
     docker_startup_timeout: float = 120.0
     docker_poll_interval: float = 1.0
 
+    # Reconnect to a running container instead of restarting it
+    docker_reconnect_container: bool = False
+
     # Advanced
     docker_bin: str = "docker"
 
