@@ -14,27 +14,42 @@
 
 """Basic DimSim blueprint — connection + visualization."""
 
-import platform
 from typing import Any
 
-from dimos.constants import DEFAULT_CAPACITY_COLOR_IMAGE
 from dimos.core.blueprints import autoconnect
 from dimos.core.global_config import global_config
-from dimos.core.transport import pSHMTransport
+from dimos.core.transport import JpegLcmTransport
 from dimos.msgs.sensor_msgs import Image
-from dimos.protocol.pubsub.impl.lcmpubsub import LCM
+from dimos.protocol.pubsub.encoders import DecodingError
+from dimos.protocol.pubsub.impl.lcmpubsub import JpegLCM, LCM
 from dimos.robot.sim.bridge import sim_bridge
 from dimos.robot.sim.tf_module import sim_tf
 from dimos.web.websocket_vis.websocket_vis_module import websocket_vis
 
-_mac_transports: dict[tuple[str, type], pSHMTransport[Image]] = {
-    ("color_image", Image): pSHMTransport(
-        "color_image", default_capacity=DEFAULT_CAPACITY_COLOR_IMAGE
-    ),
-}
 
-_transports_base = (
-    autoconnect() if platform.system() == "Linux" else autoconnect().transports(_mac_transports)
+class _SafeJpegLCM(JpegLCM):  # type: ignore[misc]
+    """JpegLCM that only decodes image topics, skipping everything else cheaply."""
+
+    _JPEG_TOPICS = frozenset({"/color_image"})
+
+    def decode(self, msg: bytes, topic: Any) -> Image:  # type: ignore[override]
+        if getattr(topic, "topic", None) not in self._JPEG_TOPICS:
+            raise DecodingError("skip")
+        return super().decode(msg, topic)
+
+
+class _SkipJpegLCM(LCM):  # type: ignore[misc]
+    """Standard LCM that skips JPEG image topics to avoid decode errors."""
+
+    def decode(self, msg: bytes, topic: Any) -> Any:  # type: ignore[override]
+        if getattr(topic, "topic", None) in _SafeJpegLCM._JPEG_TOPICS:
+            raise DecodingError("skip")
+        return super().decode(msg, topic)
+
+
+# DimSim sends JPEG-compressed images over LCM — use JpegLcmTransport to decode.
+_transports_base = autoconnect().transports(
+    {("color_image", Image): JpegLcmTransport("/color_image", Image)}
 )
 
 
@@ -69,13 +84,12 @@ def _static_base_link(rr: Any) -> list[Any]:
 
 
 rerun_config = {
-    "pubsubs": [LCM(autoconf=True)],
+    "pubsubs": [_SkipJpegLCM(autoconf=True), _SafeJpegLCM(autoconf=True)],
     "visual_override": {
         "world/camera_info": _convert_camera_info,
         "world/global_map": _convert_global_map,
         "world/navigation_costmap": _convert_navigation_costmap,
         "world/pointcloud": None,
-        "world/depth_image": None,
     },
     "static": {
         "world/tf/base_link": _static_base_link,

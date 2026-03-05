@@ -131,10 +131,6 @@ class DimSimTF(Module):
 
     def _on_odom(self, pose: PoseStamped) -> None:
         """Handle incoming odometry — publish TF transforms."""
-        # Drop out-of-order messages (UDP multicast doesn't guarantee ordering)
-        if pose.ts <= self._odom_last_ts:
-            return
-        self._odom_last_ts = pose.ts
         self._latest_odom = pose
         self._odom_count += 1
 
