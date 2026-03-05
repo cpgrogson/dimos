@@ -39,9 +39,6 @@ from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.protocol.pubsub.patterns import Glob, pattern_matches
 from dimos.utils.logging_config import setup_logger
 
-RERUN_GRPC_PORT = 9876
-RERUN_WEB_PORT = 9090
-
 # TODO OUT visual annotations
 #
 # In the future it would be nice if modules can annotate their individual OUTs with (general or rerun specific)

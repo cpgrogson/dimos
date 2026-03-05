@@ -28,10 +28,7 @@ from typing import TYPE_CHECKING, Any
 from dimos.core.module import ModuleConfig
 from dimos.core.rpc_client import RpcCall
 from dimos.utils.logging_config import setup_logger
-
-# Inlined from dimos.visualization.rerun.bridge to avoid heavy import chain in containers
-RERUN_GRPC_PORT = 9876
-RERUN_WEB_PORT = 9090
+from dimos.visualization.rerun.constants import RERUN_GRPC_PORT, RERUN_WEB_PORT
 
 if TYPE_CHECKING:
     from collections.abc import Callable
