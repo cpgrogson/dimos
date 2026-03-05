@@ -419,7 +419,14 @@ class DockerModule:
                 if main_file:
                     import pathlib
 
-                    rel = pathlib.Path(main_file).resolve().relative_to(pathlib.Path.cwd())
+                    try:
+                        rel = pathlib.Path(main_file).resolve().relative_to(pathlib.Path.cwd())
+                    except ValueError:
+                        raise RuntimeError(
+                            f"Cannot derive module path: '{main_file}' is not under cwd "
+                            f"'{pathlib.Path.cwd()}'. "
+                            "Run with `python -m` or set docker_command explicitly."
+                        ) from None
                     module_name = str(rel.with_suffix("")).replace("/", ".")
                 else:
                     raise RuntimeError(

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from dimos.core.docker_runner import DockerModule
@@ -38,7 +39,12 @@ class DockerWorkerManager:
 
         logger.info("Deploying module in Docker.", module=module_class.__name__)
         dm = DockerModule(module_class, *args, **kwargs)
-        dm.start()  # Docker modules must be running before streams/RPC can be wired
+        try:
+            dm.start()  # Docker modules must be running before streams/RPC can be wired
+        except Exception:
+            with suppress(Exception):
+                dm.stop()
+            raise
         self._docker_modules.append(dm)
         return dm
 
