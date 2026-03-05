@@ -446,7 +446,7 @@ class Module(ModuleBase[ModuleConfigT]):
 
     @rpc
     def configure_streams(self, streams: dict[str, str]) -> dict[str, bool]:
-        """Configure stream transports in bulk by topic. Called by DockerModule for stream wiring.
+        """Configure stream transports in bulk by topic. NOTE: called before start, used by DockerModule for stream wiring.
 
         Args:
             streams: mapping of stream_name -> topic
