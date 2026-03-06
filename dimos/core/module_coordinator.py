@@ -113,6 +113,8 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
                 worker_indices.append(i)
                 worker_specs.append(spec)
 
+        worker_results: list[Any] = []
+        docker_results: list[Any] = []
         try:
             worker_results = self._client.deploy_parallel(worker_specs)
             docker_results = DockerWorkerManager.deploy_parallel(docker_specs)  # type: ignore[arg-type]
