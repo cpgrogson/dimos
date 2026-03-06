@@ -102,22 +102,109 @@ main.callback()(create_dynamic_callback())  # type: ignore[no-untyped-call]
 def run(
     ctx: typer.Context,
     robot_types: list[str] = typer.Argument(..., help="Blueprints or modules to run"),
+    daemon: bool = typer.Option(False, "--daemon", "-d", help="Run in background"),
+    health_timeout: float = typer.Option(
+        30.0, "--health-timeout", help="Seconds to monitor workers before daemonizing"
+    ),
 ) -> None:
     """Start a robot blueprint"""
-    logger.info("Starting DimOS")
+    from datetime import datetime, timezone
+    import os
 
     from dimos.core.blueprints import autoconnect
+    from dimos.core.run_registry import (
+        LOG_BASE_DIR,
+        RunEntry,
+        check_port_conflicts,
+        cleanup_stale,
+        generate_run_id,
+    )
     from dimos.robot.get_all_blueprints import get_by_name
     from dimos.utils.logging_config import setup_exception_handler
 
     setup_exception_handler()
+    logger.info("Starting DimOS")
 
     cli_config_overrides: dict[str, Any] = ctx.obj
     global_config.update(**cli_config_overrides)
 
+    # Clean stale registry entries
+    stale = cleanup_stale()
+    if stale:
+        logger.info(f"Cleaned {stale} stale run entries")
+
+    # Port conflict check
+    conflict = check_port_conflicts()
+    if conflict:
+        typer.echo(
+            f"Error: Ports in use by {conflict.run_id} (PID {conflict.pid}). "
+            f"Run 'dimos stop' first.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    blueprint_name = "-".join(robot_types)
+    run_id = generate_run_id(blueprint_name)
+    log_dir = LOG_BASE_DIR / run_id
+
     blueprint = autoconnect(*map(get_by_name, robot_types))
-    dimos = blueprint.build(cli_config_overrides=cli_config_overrides)
-    dimos.loop()
+    coordinator = blueprint.build(cli_config_overrides=cli_config_overrides)
+
+    if daemon:
+        from dimos.core.daemon import (
+            daemonize,
+            health_check,
+            install_signal_handlers,
+        )
+
+        # Health check before daemonizing — catch early crashes
+        if not health_check(coordinator, timeout=health_timeout):
+            typer.echo("Error: health check failed — a worker process died.", err=True)
+            coordinator.stop()
+            raise typer.Exit(1)
+
+        n_workers = len(coordinator._client.workers) if coordinator._client else 0
+        n_modules = len(coordinator._deployed_modules)
+        typer.echo(f"✓ All modules started ({n_modules} modules, {n_workers} workers)")
+        typer.echo("✓ Health check passed")
+        typer.echo("✓ DimOS running in background\n")
+        typer.echo(f"  Run ID:    {run_id}")
+        typer.echo(f"  PID:       {os.getpid()}")
+        typer.echo(f"  Log:       {log_dir}/dimos.jsonl")
+        typer.echo("  MCP:       http://localhost:9990/mcp\n")
+        typer.echo("  Stop:      dimos stop")
+        typer.echo("  Logs:      dimos log")
+        typer.echo("  Status:    dimos status")
+
+        daemonize(log_dir)
+
+        entry = RunEntry(
+            run_id=run_id,
+            pid=os.getpid(),
+            blueprint=blueprint_name,
+            started_at=datetime.now(timezone.utc).isoformat(),
+            log_dir=str(log_dir),
+            cli_args=list(robot_types),
+            config_overrides=cli_config_overrides,
+        )
+        entry.save()
+        install_signal_handlers(entry, coordinator)
+        coordinator.loop()
+    else:
+        entry = RunEntry(
+            run_id=run_id,
+            pid=os.getpid(),
+            blueprint=blueprint_name,
+            started_at=datetime.now(timezone.utc).isoformat(),
+            log_dir=str(log_dir),
+            cli_args=list(robot_types),
+            config_overrides=cli_config_overrides,
+        )
+        entry.save()
+        try:
+            coordinator.loop()
+        finally:
+            entry.remove()
 
 
 @main.command()
