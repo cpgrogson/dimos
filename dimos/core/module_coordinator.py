@@ -115,13 +115,13 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
 
         try:
             worker_results = self._client.deploy_parallel(worker_specs)
-            docker_results = DockerWorkerManager.deploy_parallel(docker_specs)
+            docker_results = DockerWorkerManager.deploy_parallel(docker_specs)  # type: ignore[arg-type]
         finally:
             # Reassemble results in original input order
             results: list[Any] = [None] * len(module_specs)
             for idx, mod in zip(worker_indices, worker_results, strict=False):
                 results[idx] = mod
-            for idx, mod in zip(docker_indices, docker_results, strict=False):
+            for idx, mod in zip(docker_indices, docker_results, strict=False):  # type: ignore[assignment]
                 results[idx] = mod
             # Register whatever succeeded so stop() can clean them up
             for (module_class, _, _), module in zip(module_specs, results, strict=False):

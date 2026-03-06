@@ -38,7 +38,7 @@ class DockerWorkerManager:
         from dimos.core.docker_runner import DockerModule
 
         def _on_errors(
-            _outcomes: list, successes: list[DockerModule], errors: list[Exception]
+            _outcomes: list[Any], successes: list[DockerModule], errors: list[Exception]
         ) -> None:
             for mod in successes:
                 with suppress(Exception):

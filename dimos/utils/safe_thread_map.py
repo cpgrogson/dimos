@@ -86,7 +86,7 @@ def safe_thread_map(
     if errors:
         if on_errors is not None:
             zipped = [(items[i], outcomes[i]) for i in range(len(items))]
-            return on_errors(zipped, successes, errors)  # type: ignore[return-value]
+            return on_errors(zipped, successes, errors)  # type: ignore[return-value, no-any-return]
         raise ExceptionGroup("safe_thread_map failed", errors)
 
     return [outcomes[i] for i in range(len(items))]  # type: ignore[misc]

@@ -83,7 +83,7 @@ class WorkerManager:
             assignments.append((worker, module_class, args, kwargs))
 
         def _on_errors(
-            _outcomes: list, successes: list[RPCClient], errors: list[Exception]
+            _outcomes: list[Any], successes: list[RPCClient], errors: list[Exception]
         ) -> None:
             for rpc_client in successes:
                 with suppress(Exception):
