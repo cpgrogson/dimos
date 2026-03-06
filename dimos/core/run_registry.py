@@ -27,8 +27,17 @@ from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
 
-REGISTRY_DIR = Path.home() / ".local" / "state" / "dimos" / "runs"
-LOG_BASE_DIR = Path.home() / ".local" / "state" / "dimos" / "logs"
+
+def _get_state_dir() -> Path:
+    """XDG_STATE_HOME compliant state directory for dimos."""
+    xdg = os.environ.get("XDG_STATE_HOME")
+    if xdg:
+        return Path(xdg) / "dimos"
+    return Path.home() / ".local" / "state" / "dimos"
+
+
+REGISTRY_DIR = _get_state_dir() / "runs"
+LOG_BASE_DIR = _get_state_dir() / "logs"
 
 
 @dataclass
@@ -107,7 +116,7 @@ def cleanup_stale() -> int:
     """Remove registry entries for dead processes. Returns count removed."""
     REGISTRY_DIR.mkdir(parents=True, exist_ok=True)
     removed = 0
-    for f in REGISTRY_DIR.glob("*.json"):
+    for f in list(REGISTRY_DIR.glob("*.json")):
         try:
             entry = RunEntry.load(f)
             if not is_pid_alive(entry.pid):
@@ -131,3 +140,42 @@ def get_most_recent(alive_only: bool = True) -> RunEntry | None:
     """Return the most recently created run entry, or None."""
     runs = list_runs(alive_only=alive_only)
     return runs[-1] if runs else None
+
+
+import signal
+
+
+def stop_entry(entry: RunEntry, force: bool = False) -> tuple[str, bool]:
+    """Stop a DimOS instance by registry entry.
+
+    Returns (message, success) for the CLI to display.
+    """
+    sig = signal.SIGKILL if force else signal.SIGTERM
+    sig_name = "SIGKILL" if force else "SIGTERM"
+
+    try:
+        os.kill(entry.pid, sig)
+    except ProcessLookupError:
+        entry.remove()
+        return ("Process already dead, cleaning registry", True)
+
+    if not force:
+        for _ in range(50):  # 5 seconds
+            if not is_pid_alive(entry.pid):
+                break
+            time.sleep(0.1)
+        else:
+            try:
+                os.kill(entry.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            else:
+                for _ in range(20):
+                    if not is_pid_alive(entry.pid):
+                        break
+                    time.sleep(0.1)
+            entry.remove()
+            return (f"Escalated to SIGKILL after {sig_name} timeout", True)
+
+    entry.remove()
+    return (f"Stopped with {sig_name}", True)

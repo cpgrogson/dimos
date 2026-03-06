@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from dimos.core.module import Module, ModuleT
     from dimos.core.resource_monitor.monitor import StatsMonitor
     from dimos.core.rpc_client import ModuleProxy
+    from dimos.core.worker import Worker
 
 logger = setup_logger()
 
@@ -50,7 +51,7 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         self._deployed_modules = {}
 
     @property
-    def workers(self) -> list:
+    def workers(self) -> list[Worker]:
         """Active worker processes."""
         if self._client is None:
             return []

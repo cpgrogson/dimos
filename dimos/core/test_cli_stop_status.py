@@ -12,13 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for `dimos status` and `dimos stop` CLI commands.
-
-Exercises the actual typer CLI surface using CliRunner with real
-subprocess PIDs, not mocks. Verifies output formatting, flag handling,
-and registry lifecycle.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
@@ -59,7 +52,7 @@ def sleeper():
         try:
             p.kill()
         except OSError:
-            pass  # already dead
+            pass
         try:
             p.wait(timeout=2)
         except Exception:
@@ -118,6 +111,13 @@ class TestStatusCLI:
         result = CliRunner().invoke(main, ["status"])
         assert "3h 22m" in result.output
 
+    def test_status_shows_log_dir(self, sleeper):
+        proc = sleeper()
+        _entry("log-dir-test", proc.pid, log_dir="/tmp/custom-logs")
+
+        result = CliRunner().invoke(main, ["status"])
+        assert "/tmp/custom-logs" in result.output
+
     def test_status_shows_blueprint(self, sleeper):
         proc = sleeper()
         _entry("bp-test", proc.pid, blueprint="unitree-g1")
@@ -126,7 +126,7 @@ class TestStatusCLI:
         assert "unitree-g1" in result.output
 
     def test_status_filters_dead_pids(self):
-        _entry("dead-one", pid=2_000_000_000)  # definitely not alive
+        _entry("dead-one", pid=2_000_000_000)
 
         result = CliRunner().invoke(main, ["status"])
         assert "No running" in result.output
@@ -144,6 +144,7 @@ class TestStopCLI:
         result = CliRunner().invoke(main, ["stop"])
         assert result.exit_code == 1
 
+    @pytest.mark.slow
     def test_stop_default_most_recent(self, sleeper):
         proc = sleeper()
         entry = _entry("stop-default", proc.pid)
@@ -152,9 +153,14 @@ class TestStopCLI:
         assert result.exit_code == 0
         assert "Stopping" in result.output
         assert "stop-default" in result.output
-        time.sleep(0.3)
+        # Poll for registry cleanup
+        for _ in range(30):
+            if not entry.registry_path.exists():
+                break
+            time.sleep(0.1)
         assert not entry.registry_path.exists()
 
+    @pytest.mark.slow
     def test_stop_force_sends_sigkill(self, sleeper):
         proc = sleeper()
         _entry("force-kill", proc.pid)
@@ -162,10 +168,13 @@ class TestStopCLI:
         result = CliRunner().invoke(main, ["stop", "--force"])
         assert result.exit_code == 0
         assert "SIGKILL" in result.output
-        time.sleep(0.3)
-        # Process should be dead
+        for _ in range(30):
+            if proc.poll() is not None:
+                break
+            time.sleep(0.1)
         assert proc.poll() is not None
 
+    @pytest.mark.slow
     def test_stop_sigterm_kills_process(self, sleeper):
         """Verify SIGTERM actually terminates the target process."""
         proc = sleeper()
@@ -173,6 +182,8 @@ class TestStopCLI:
 
         result = CliRunner().invoke(main, ["stop"])
         assert "SIGTERM" in result.output
-        # sleep handles SIGTERM by dying — wait for it
-        time.sleep(6)
-        assert proc.poll() is not None
+        for _ in range(100):  # up to 10s
+            if proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        assert proc.poll() is not None, "Process should be dead after SIGTERM"

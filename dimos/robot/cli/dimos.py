@@ -250,46 +250,14 @@ def stop(
     _stop_entry(entry, force=force)
 
 
-def _stop_entry(entry, force: bool = False) -> None:  # type: ignore[no-untyped-def]
+def _stop_entry(entry: "RunEntry", force: bool = False) -> None:
     """Stop a single DimOS instance by registry entry."""
-    import os
-    import signal
-    import time
+    from dimos.core.run_registry import stop_entry
 
-    from dimos.core.run_registry import is_pid_alive
-
-    sig = signal.SIGKILL if force else signal.SIGTERM
     sig_name = "SIGKILL" if force else "SIGTERM"
-
     typer.echo(f"Stopping {entry.run_id} (PID {entry.pid}) with {sig_name}...")
-
-    try:
-        os.kill(entry.pid, sig)
-    except ProcessLookupError:
-        typer.echo("  Process already dead, cleaning registry")
-        entry.remove()
-        return
-
-    # Wait for graceful shutdown
-    if not force:
-        for _ in range(50):  # 5 seconds
-            if not is_pid_alive(entry.pid):
-                break
-            time.sleep(0.1)
-        else:
-            typer.echo("  Still alive after 5s, sending SIGKILL...")
-            try:
-                os.kill(entry.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            else:
-                for _ in range(20):  # up to 2s for SIGKILL to be processed
-                    if not is_pid_alive(entry.pid):
-                        break
-                    time.sleep(0.1)
-
-    entry.remove()
-    typer.echo("  Stopped.")
+    msg, _ok = stop_entry(entry, force=force)
+    typer.echo(f"  {msg}")
 
 
 @main.command()

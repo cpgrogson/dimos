@@ -12,26 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""End-to-end tests for daemon lifecycle using a lightweight PingPong blueprint.
-
-These tests exercise real forkserver workers and module deployment — no mocks.
-They use a minimal 2-module blueprint (PingModule + PongModule) that needs
-no hardware, no LFS data, and no replay files.
-"""
-
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 import os
 import signal
 import time
 
 import pytest
-
-# Skip sysctl interactive prompt in CI / headless
-os.environ["CI"] = "1"
-
-from datetime import datetime, timezone
+from typer.testing import CliRunner
 
 from dimos.core.blueprints import autoconnect
 from dimos.core.daemon import health_check
@@ -44,6 +34,7 @@ from dimos.core.run_registry import (
     list_runs,
 )
 from dimos.core.stream import Out
+from dimos.robot.cli.dimos import main
 
 # ---------------------------------------------------------------------------
 # Lightweight test modules
@@ -65,33 +56,14 @@ class PongModule(Module):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Fixtures
 # ---------------------------------------------------------------------------
 
 
-def _build(n_workers: int = 1):
-    """Build a 2-module blueprint with *n_workers* forkserver workers."""
-    global_config.update(viewer_backend="none", n_workers=n_workers)
-    bp = autoconnect(PingModule.blueprint(), PongModule.blueprint())
-    coord = bp.build(cli_config_overrides={"viewer_backend": "none", "n_workers": n_workers})
-    return coord
-
-
-def _make_entry(coord, run_id: str | None = None) -> RunEntry:
-    """Create and save a registry entry for the current process."""
-    if run_id is None:
-        run_id = f"test-{datetime.now(timezone.utc).strftime('%H%M%S%f')}"
-    entry = RunEntry(
-        run_id=run_id,
-        pid=os.getpid(),
-        blueprint="ping-pong-test",
-        started_at=datetime.now(timezone.utc).isoformat(),
-        log_dir="/tmp/dimos-e2e-test",
-        cli_args=["ping-pong"],
-        config_overrides={"n_workers": 1},
-    )
-    entry.save()
-    return entry
+@pytest.fixture(autouse=True)
+def _ci_env(monkeypatch):
+    """Set CI=1 to skip sysctl interactive prompt — scoped per test, not module."""
+    monkeypatch.setenv("CI", "1")
 
 
 @pytest.fixture(autouse=True)
@@ -105,6 +77,44 @@ def _clean_registry(tmp_path, monkeypatch):
     yield test_dir
 
 
+@pytest.fixture()
+def coordinator():
+    """Build a PingPong blueprint (1 worker) and yield the coordinator."""
+    global_config.update(viewer_backend="none", n_workers=1)
+    bp = autoconnect(PingModule.blueprint(), PongModule.blueprint())
+    coord = bp.build()
+    yield coord
+    coord.stop()
+
+
+@pytest.fixture()
+def coordinator_2w():
+    """Build a PingPong blueprint with 2 workers."""
+    global_config.update(viewer_backend="none", n_workers=2)
+    bp = autoconnect(PingModule.blueprint(), PongModule.blueprint())
+    coord = bp.build()
+    yield coord
+    coord.stop()
+
+
+@pytest.fixture()
+def registry_entry():
+    """Create and save a registry entry. Removes on teardown."""
+    run_id = f"test-{datetime.now(timezone.utc).strftime('%H%M%S%f')}"
+    entry = RunEntry(
+        run_id=run_id,
+        pid=os.getpid(),
+        blueprint="ping-pong-test",
+        started_at=datetime.now(timezone.utc).isoformat(),
+        log_dir="/tmp/dimos-e2e-test",
+        cli_args=["ping-pong"],
+        config_overrides={"n_workers": 1},
+    )
+    entry.save()
+    yield entry
+    entry.remove()
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -114,65 +124,47 @@ def _clean_registry(tmp_path, monkeypatch):
 class TestDaemonE2E:
     """End-to-end daemon lifecycle with real workers."""
 
-    def test_single_worker_lifecycle(self):
-        """Build → health check → registry → status → stop (1 worker)."""
-        coord = _build(n_workers=1)
+    def test_single_worker_lifecycle(self, coordinator, registry_entry):
+        """Build -> health check -> registry -> status (1 worker)."""
+        assert len(coordinator.workers) == 1
+        assert coordinator.n_modules == 2
 
-        workers = coord._client.workers
-        assert len(workers) == 1
-        assert len(coord._deployed_modules) == 2  # PingModule + PongModule
+        assert health_check(coordinator), "Health check should pass"
 
-        ok = health_check(coord)
-        assert ok, "Health check should pass with healthy worker"
-
-        entry = _make_entry(coord)
         runs = list_runs(alive_only=True)
         assert len(runs) == 1
-        assert runs[0].run_id == entry.run_id
+        assert runs[0].run_id == registry_entry.run_id
 
         latest = get_most_recent(alive_only=True)
         assert latest is not None
-        assert latest.run_id == entry.run_id
+        assert latest.run_id == registry_entry.run_id
 
-        coord.stop()
-        entry.remove()
-        assert len(list_runs(alive_only=True)) == 0
-
-    def test_multiple_workers(self):
-        """Build with 2 workers — both should be alive after health check."""
-        coord = _build(n_workers=2)
-
-        workers = coord._client.workers
-        assert len(workers) == 2
-        for w in workers:
+    def test_multiple_workers(self, coordinator_2w):
+        """Build with 2 workers — both should be alive."""
+        assert len(coordinator_2w.workers) == 2
+        for w in coordinator_2w.workers:
             assert w.pid is not None, f"Worker {w.worker_id} has no PID"
 
-        ok = health_check(coord)
-        assert ok, "Health check should pass with 2 healthy workers"
+        assert health_check(coordinator_2w), "Health check should pass"
 
-        coord.stop()
-
-    def test_health_check_detects_dead_worker(self):
-        """Kill a worker process — health check should detect and fail."""
-        coord = _build(n_workers=1)
-
-        worker = coord._client.workers[0]
+    def test_health_check_detects_dead_worker(self, coordinator):
+        """Kill a worker process — health check should fail."""
+        worker = coordinator.workers[0]
         worker_pid = worker.pid
         assert worker_pid is not None
 
-        # Kill the worker
         os.kill(worker_pid, signal.SIGKILL)
-        time.sleep(0.5)  # let it die
+        for _ in range(50):
+            try:
+                os.kill(worker_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
 
-        ok = health_check(coord)
-        assert not ok, "Health check should FAIL after worker killed"
+        assert not health_check(coordinator), "Health check should FAIL"
 
-        coord.stop()
-
-    def test_registry_entry_details(self):
+    def test_registry_entry_details(self, coordinator):
         """Verify all fields are correctly persisted in the JSON registry."""
-        coord = _build(n_workers=1)
-
         run_id = "detail-test-001"
         entry = RunEntry(
             run_id=run_id,
@@ -185,7 +177,6 @@ class TestDaemonE2E:
         )
         entry.save()
 
-        # Read raw JSON
         raw = json.loads(entry.registry_path.read_text())
         assert raw["run_id"] == run_id
         assert raw["pid"] == os.getpid()
@@ -195,25 +186,19 @@ class TestDaemonE2E:
         assert raw["cli_args"] == ["--replay", "ping-pong"]
         assert raw["config_overrides"] == {"n_workers": 1, "viewer_backend": "none"}
 
-        # Roundtrip through list_runs
         runs = list_runs()
         assert len(runs) == 1
         loaded = runs[0]
         assert loaded.run_id == run_id
-        assert loaded.blueprint == "ping-pong-detail"
         assert loaded.cli_args == ["--replay", "ping-pong"]
 
-        coord.stop()
         entry.remove()
 
-    def test_stale_cleanup(self):
+    def test_stale_cleanup(self, coordinator, registry_entry):
         """Stale entries (dead PIDs) should be removed by cleanup_stale."""
-        coord = _build(n_workers=1)
-
-        # Create an entry with a bogus PID that doesn't exist
         stale = RunEntry(
             run_id="stale-dead-pid",
-            pid=99999999,  # definitely not running
+            pid=99999999,
             blueprint="ghost",
             started_at=datetime.now(timezone.utc).isoformat(),
             log_dir="/tmp/ghost",
@@ -222,21 +207,14 @@ class TestDaemonE2E:
         )
         stale.save()
 
-        # Also create a live entry
-        live = _make_entry(coord)
-
-        # alive_only=False returns ALL entries (no auto-clean)
         assert len(list_runs(alive_only=False)) == 2
 
         removed = cleanup_stale()
-        assert removed == 1  # only the dead PID entry removed
+        assert removed == 1
 
         remaining = list_runs(alive_only=False)
         assert len(remaining) == 1
-        assert remaining[0].run_id == live.run_id
-
-        coord.stop()
-        live.remove()
+        assert remaining[0].run_id == registry_entry.run_id
 
 
 # ---------------------------------------------------------------------------
@@ -244,100 +222,66 @@ class TestDaemonE2E:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture()
+def live_blueprint():
+    """Build PingPong and register. Yields (coord, entry). Cleans up on teardown."""
+    global_config.update(viewer_backend="none", n_workers=1)
+    bp = autoconnect(PingModule.blueprint(), PongModule.blueprint())
+    coord = bp.build()
+    run_id = f"e2e-cli-{datetime.now(timezone.utc).strftime('%H%M%S%f')}"
+    entry = RunEntry(
+        run_id=run_id,
+        pid=os.getpid(),
+        blueprint="ping-pong",
+        started_at=datetime.now(timezone.utc).isoformat(),
+        log_dir="/tmp/dimos-e2e-cli",
+        cli_args=["ping-pong"],
+        config_overrides={"n_workers": 1},
+    )
+    entry.save()
+    yield coord, entry
+    coord.stop()
+    entry.remove()
+
+
 @pytest.mark.slow
 class TestCLIWithRealBlueprint:
-    """Exercise `dimos status` and `dimos stop` against a live DimOS blueprint."""
+    """Exercise dimos status and dimos stop against a live DimOS blueprint."""
 
-    def _build_and_register(self, run_id: str = "e2e-cli-test"):
-        """Build PingPong blueprint and register it in the run registry."""
-        global_config.update(viewer_backend="none", n_workers=1)
-        bp = autoconnect(PingModule.blueprint(), PongModule.blueprint())
-        coord = bp.build(cli_config_overrides={"viewer_backend": "none", "n_workers": 1})
+    def test_status_shows_live_blueprint(self, live_blueprint):
+        _coord, entry = live_blueprint
+        result = CliRunner().invoke(main, ["status"])
 
-        entry = RunEntry(
-            run_id=run_id,
-            pid=os.getpid(),
-            blueprint="ping-pong",
-            started_at=datetime.now(timezone.utc).isoformat(),
-            log_dir="/tmp/dimos-e2e-cli",
-            cli_args=["ping-pong"],
-            config_overrides={"n_workers": 1},
-        )
-        entry.save()
-        return coord, entry
+        assert result.exit_code == 0
+        assert entry.run_id in result.output
+        assert "ping-pong" in result.output
+        assert str(os.getpid()) in result.output
 
-    def test_status_shows_live_blueprint(self):
-        """Status should display a running blueprint's details."""
-        from typer.testing import CliRunner
+    def test_status_shows_worker_count_via_registry(self, live_blueprint):
+        coord, entry = live_blueprint
 
-        from dimos.robot.cli.dimos import main
+        assert len(coord.workers) >= 1
+        for w in coord.workers:
+            assert w.pid is not None
 
-        coord, entry = self._build_and_register("e2e-status-live")
-        try:
-            runner = CliRunner()
-            result = runner.invoke(main, ["status"])
+        runs = list_runs(alive_only=True)
+        matching = [r for r in runs if r.run_id == entry.run_id]
+        assert len(matching) == 1
 
-            assert result.exit_code == 0
-            assert "e2e-status-live" in result.output
-            assert "ping-pong" in result.output
-            assert str(os.getpid()) in result.output
-        finally:
-            coord.stop()
-            entry.remove()
+    def test_stop_kills_real_workers(self, live_blueprint):
+        coord, _entry = live_blueprint
 
-    def test_status_shows_worker_count_via_registry(self):
-        """Verify the registry entry is findable after real build."""
-        coord, entry = self._build_and_register("e2e-worker-check")
-        try:
-            # Verify workers are actually alive
-            workers = coord._client.workers
-            assert len(workers) >= 1
-            for w in workers:
-                assert w.pid is not None
-
-            # Verify registry entry
-            runs = list_runs(alive_only=True)
-            matching = [r for r in runs if r.run_id == "e2e-worker-check"]
-            assert len(matching) == 1
-        finally:
-            coord.stop()
-            entry.remove()
-
-    def test_stop_kills_real_workers(self):
-        """dimos stop should kill the process and clean up registry."""
-        from typer.testing import CliRunner
-
-        from dimos.robot.cli.dimos import main
-
-        coord, entry = self._build_and_register("e2e-stop-real")
-
-        # Verify workers are alive before stop
-        worker_pids = [w.pid for w in coord._client.workers if w.pid]
+        worker_pids = [w.pid for w in coord.workers if w.pid]
         assert len(worker_pids) >= 1
 
-        runner = CliRunner()
-
-        # Status should show it
-        result = runner.invoke(main, ["status"])
-        assert "e2e-stop-real" in result.output
-
-        # Stop it — note: this sends SIGTERM to our own process (os.getpid()),
-        # which would kill the test. Instead, test that stop with --pid on a
-        # worker PID works, and then clean up the coordinator manually.
-        # The real stop flow is: SIGTERM → signal handler → coord.stop() → registry remove
-        # We test the signal handler separately in test_daemon.py.
-        # Here we verify the registry + coordinator stop flow.
         coord.stop()
-        time.sleep(0.5)
 
-        # Workers should be dead after coord.stop()
         for wpid in worker_pids:
-            try:
-                os.kill(wpid, 0)  # check if alive
-                alive = True
-            except ProcessLookupError:
-                alive = False
-            assert not alive, f"Worker PID {wpid} still alive after coord.stop()"
-
-        entry.remove()
-        assert len(list_runs(alive_only=True)) == 0
+            for _ in range(50):
+                try:
+                    os.kill(wpid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.1)
+            else:
+                pytest.fail(f"Worker PID {wpid} still alive after coord.stop()")

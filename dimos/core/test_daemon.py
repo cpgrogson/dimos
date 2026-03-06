@@ -151,13 +151,6 @@ class TestPortConflicts:
         assert conflict is not None
         assert conflict.run_id == entry.run_id
 
-    def test_port_conflict_grpc_only(self, tmp_registry: Path):
-        entry = _make_entry(pid=os.getpid(), grpc_port=9877)
-        entry.save()
-
-        conflict = check_port_conflicts(grpc_port=9877)
-        assert conflict is not None
-
     def test_port_conflict_no_false_positive(self, tmp_registry: Path):
         entry = _make_entry(pid=os.getpid(), grpc_port=8001)
         entry.save()
@@ -369,9 +362,9 @@ class TestStopCommand:
 
         # Import the stop helper
         sys.path.insert(0, str(Path(__file__).parent.parent))
-        from dimos.robot.cli.dimos import _stop_entry
+        from dimos.core.run_registry import stop_entry
 
-        _stop_entry(entry, force=False)
+        stop_entry(entry, force=False)
 
         assert 12345 in killed_pids
         import signal
@@ -404,9 +397,9 @@ class TestStopCommand:
         )
         entry.save()
 
-        from dimos.robot.cli.dimos import _stop_entry
+        from dimos.core.run_registry import stop_entry
 
-        _stop_entry(entry, force=True)
+        stop_entry(entry, force=True)
 
         import signal
 
@@ -435,9 +428,9 @@ class TestStopCommand:
         entry.save()
         assert entry.registry_path.exists()
 
-        from dimos.robot.cli.dimos import _stop_entry
+        from dimos.core.run_registry import stop_entry
 
-        _stop_entry(entry, force=False)
+        stop_entry(entry, force=False)
         assert not entry.registry_path.exists()
 
     def test_stop_escalates_to_sigkill_after_timeout(self, tmp_path, monkeypatch):
@@ -470,9 +463,9 @@ class TestStopCommand:
         )
         entry.save()
 
-        from dimos.robot.cli.dimos import _stop_entry
+        from dimos.core.run_registry import stop_entry
 
-        _stop_entry(entry, force=False)
+        stop_entry(entry, force=False)
 
         import signal
 

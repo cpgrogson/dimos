@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for DIM-685: per-run log directory routing."""
-
 from __future__ import annotations
 
 import os
@@ -61,9 +59,6 @@ class TestLogFilePathRouting:
         assert path == log_dir / "main.jsonl"
 
     def test_routes_via_env_var(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(logging_config, "_RUN_LOG_DIR", None)
-        monkeypatch.setattr(logging_config, "_LOG_FILE_PATH", None)
-
         env_dir = tmp_path / "env-run"
         monkeypatch.setenv("DIMOS_RUN_LOG_DIR", str(env_dir))
 
@@ -71,11 +66,7 @@ class TestLogFilePathRouting:
         assert path == env_dir / "main.jsonl"
         assert env_dir.is_dir()
 
-    def test_falls_back_to_legacy(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(logging_config, "_RUN_LOG_DIR", None)
-        monkeypatch.setattr(logging_config, "_LOG_FILE_PATH", None)
-        monkeypatch.delenv("DIMOS_RUN_LOG_DIR", raising=False)
-
+    def test_falls_back_to_legacy(self):
         path = logging_config._get_log_file_path()
         assert path.name.startswith("dimos_")
         assert path.suffix == ".jsonl"
