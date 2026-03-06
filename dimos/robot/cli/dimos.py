@@ -169,11 +169,9 @@ def run(
         typer.echo("✓ Health check passed")
         typer.echo("✓ DimOS running in background\n")
         typer.echo(f"  Run ID:    {run_id}")
-        typer.echo(f"  PID:       {os.getpid()}")
-        typer.echo(f"  Log:       {log_dir}/dimos.jsonl")
+        typer.echo(f"  Log:       {log_dir}")
         typer.echo("  MCP:       http://localhost:9990/mcp\n")
         typer.echo("  Stop:      dimos stop")
-        typer.echo("  Logs:      dimos log")
         typer.echo("  Status:    dimos status")
 
         daemonize(log_dir)

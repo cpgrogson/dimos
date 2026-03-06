@@ -122,6 +122,10 @@ def daemonize(log_dir: Path) -> None:
     os.dup2(stderr_file.fileno(), sys.stdout.fileno())
     os.dup2(stderr_file.fileno(), sys.stderr.fileno())
 
+    # Close original FDs — dup2'd copies keep the underlying files open
+    devnull.close()
+    stderr_file.close()
+
 
 # ---------------------------------------------------------------------------
 # Signal handler for clean shutdown
