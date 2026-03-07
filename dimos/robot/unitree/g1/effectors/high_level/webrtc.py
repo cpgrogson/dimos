@@ -22,7 +22,7 @@ from reactivex.disposable import Disposable
 
 from dimos.agents.annotation import skill
 from dimos.core import In, Module, ModuleConfig, rpc
-from dimos.core.global_config import GlobalConfig
+from dimos.core.global_config import GlobalConfig, global_config
 from dimos.msgs.geometry_msgs import Twist, Vector3
 from dimos.robot.unitree.connection import UnitreeWebRTCConnection
 from dimos.robot.unitree.g1.effectors.high_level.high_level_spec import HighLevelG1Spec
