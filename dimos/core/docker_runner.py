@@ -54,6 +54,8 @@ class DockerModuleConfig(ModuleConfig):
 
     For advanced Docker options not listed here, use docker_extra_args.
     Example: docker_extra_args=["--cap-add=SYS_ADMIN", "--read-only"]
+
+    NOTE: a DockerModule will rebuild automatically if the Dockerfile or build args change
     """
 
     # Build / image
@@ -61,6 +63,7 @@ class DockerModuleConfig(ModuleConfig):
     docker_file: Path | None = None  # Required on host for building, not needed in container
     docker_build_context: Path | None = None
     docker_build_args: dict[str, str] = field(default_factory=dict)
+    docker_build_ssh: bool = False  # Pass --ssh default to docker build (for private repo clones)
 
     # Identity
     docker_container_name: str | None = None
@@ -180,7 +183,12 @@ class DockerModule(ModuleProxyProtocol):
     config: DockerModuleConfig
 
     def __init__(self, module_class: type[Module], *args: Any, **kwargs: Any) -> None:
-        from dimos.core.docker_build import build_image, image_exists
+        from dimos.core.docker_build import (
+            _compute_build_hash,
+            _get_image_build_hash,
+            build_image,
+            image_exists,
+        )
 
         config_class = getattr(module_class, "default_config", DockerModuleConfig)
         if not issubclass(config_class, DockerModuleConfig):
@@ -211,21 +219,23 @@ class DockerModule(ModuleProxyProtocol):
 
         # Build or pull image, launch container, wait for RPC server
         try:
-            if not image_exists(config):
-                if config.docker_file is not None:
+            if config.docker_file is not None:
+                current_hash = _compute_build_hash(config)
+                stored_hash = _get_image_build_hash(_docker_bin(config), config.docker_image)
+                if current_hash != stored_hash:
                     logger.info(f"Building {config.docker_image}")
                     build_image(config)
-                else:
-                    logger.info(f"Pulling {config.docker_image}")
-                    r = _run(
-                        [_docker_bin(config), "pull", config.docker_image],
-                        timeout=config.docker_pull_timeout,
+            elif not image_exists(config):
+                logger.info(f"Pulling {config.docker_image}")
+                r = _run(
+                    [_docker_bin(config), "pull", config.docker_image],
+                    timeout=config.docker_pull_timeout,
+                )
+                if r.returncode != 0:
+                    raise RuntimeError(
+                        f"Failed to pull image '{config.docker_image}'.\n"
+                        f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
                     )
-                    if r.returncode != 0:
-                        raise RuntimeError(
-                            f"Failed to pull image '{config.docker_image}'.\n"
-                            f"STDOUT:\n{r.stdout}\nSTDERR:\n{r.stderr}"
-                        )
 
             reconnect = False
             if _is_container_running(config, self._container_name):

@@ -20,6 +20,7 @@ that installs DimOS and creates the module entrypoint.
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from typing import TYPE_CHECKING
 
@@ -90,14 +91,52 @@ def _convert_dockerfile(dockerfile: Path) -> Path:
     return converted
 
 
+_BUILD_HASH_LABEL = "dimos.build.hash"
+
+
+def _compute_build_hash(cfg: DockerModuleConfig) -> str:
+    """Hash Dockerfile contents, build args, and build context path."""
+    assert cfg.docker_file is not None
+    digest = hashlib.sha256()
+    digest.update(cfg.docker_file.read_bytes())
+    for key, val in sorted(cfg.docker_build_args.items()):
+        digest.update(f"{key}={val}".encode())
+    return digest.hexdigest()
+
+
+def _get_image_build_hash(docker_bin: str, image_name: str) -> str | None:
+    """Read the build hash label from an existing Docker image."""
+    r = _run(
+        [
+            docker_bin,
+            "image",
+            "inspect",
+            "-f",
+            '{{index .Config.Labels "' + _BUILD_HASH_LABEL + '"}}',
+            image_name,
+        ],
+        timeout=DOCKER_CMD_TIMEOUT,
+    )
+    if r.returncode != 0:
+        return None
+    value = r.stdout.strip()
+    # docker prints "<no value>" when the label is missing
+    return value if value and value != "<no value>" else None
+
+
 def build_image(cfg: DockerModuleConfig) -> None:
     """Build Docker image using footer mode conversion."""
     if cfg.docker_file is None:
         raise ValueError("docker_file is required for building Docker images")
+
+    build_hash = _compute_build_hash(cfg)
     dockerfile = _convert_dockerfile(cfg.docker_file)
 
     context = cfg.docker_build_context or cfg.docker_file.parent
     cmd = [_docker_bin(cfg), "build", "-t", cfg.docker_image, "-f", str(dockerfile)]
+    cmd.extend(["--label", f"{_BUILD_HASH_LABEL}={build_hash}"])
+    if cfg.docker_build_ssh:
+        cmd.extend(["--ssh", "default"])
     for k, v in cfg.docker_build_args.items():
         cmd.extend(["--build-arg", f"{k}={v}"])
     cmd.append(str(context))
@@ -115,6 +154,8 @@ def image_exists(cfg: DockerModuleConfig) -> bool:
 
 __all__ = [
     "DIMOS_FOOTER",
+    "_compute_build_hash",
+    "_get_image_build_hash",
     "build_image",
     "image_exists",
 ]
