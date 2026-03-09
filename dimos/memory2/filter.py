@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from dimos.memory2.buffer import BackpressureBuffer
     from dimos.memory2.type import Observation
 
 
@@ -129,3 +130,4 @@ class StreamQuery:
     order_desc: bool = False
     limit_val: int | None = None
     offset_val: int | None = None
+    live_buffer: BackpressureBuffer[Any] | None = None

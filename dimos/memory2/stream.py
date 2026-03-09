@@ -18,7 +18,7 @@ from itertools import islice
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from dimos.memory2.backend import Backend
-from dimos.memory2.buffer import BackpressureBuffer, ClosedError, KeepLast
+from dimos.memory2.buffer import BackpressureBuffer, KeepLast
 from dimos.memory2.filter import (
     AfterFilter,
     AtFilter,
@@ -34,8 +34,6 @@ from dimos.memory2.transform import FnTransformer, Transformer
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-
-    from reactivex.abc import DisposableBase
 
     from dimos.memory2.type import Observation
 
@@ -57,14 +55,10 @@ class Stream(Generic[T]):
         *,
         xf: Transformer[Any, T] | None = None,
         query: StreamQuery = StreamQuery(),
-        _live_buf: BackpressureBuffer[Observation[Any]] | None = None,
-        _live_sub: DisposableBase | None = None,
     ) -> None:
         self._source = source
         self._xf = xf
         self._query = query
-        self._live_buf = _live_buf
-        self._live_sub = _live_sub  # kept alive for lifetime of stream
 
     # ── Iteration ───────────────────────────────────────────────────
 
@@ -73,16 +67,9 @@ class Stream(Generic[T]):
 
     def _build_iter(self) -> Iterator[Observation[T]]:
         if isinstance(self._source, Stream):
-            it = self._iter_transform()
-        else:
-            # Backend handles all query application
-            it = self._source.iterate(self._query)
-
-        # Live tail: after backfill exhausts, yield from live buffer
-        if self._live_buf is not None:
-            it = self._iter_with_live(it)
-
-        return it
+            return self._iter_transform()
+        # Backend handles all query application (including live if requested)
+        return self._source.iterate(self._query)
 
     def _iter_transform(self) -> Iterator[Observation[T]]:
         """Iterate a transform source, applying query filters in Python."""
@@ -113,29 +100,6 @@ class Stream(Generic[T]):
 
         return it
 
-    def _iter_with_live(self, backfill: Iterator[Observation[T]]) -> Iterator[Observation[T]]:
-        """Yield backfill, then switch to live tail."""
-        last_id = -1
-        for obs in backfill:
-            last_id = max(last_id, obs.id)
-            yield obs
-
-        # Live phase
-        buf = self._live_buf
-        assert buf is not None
-        filters = self._query.filters
-        try:
-            while True:
-                obs = buf.take()
-                if obs.id <= last_id:
-                    continue
-                last_id = obs.id
-                if filters and not all(f.matches(obs) for f in filters):
-                    continue
-                yield obs
-        except (ClosedError, StopIteration):
-            return
-
     # ── Query builders ──────────────────────────────────────────────
 
     def _replace_query(self, **overrides: Any) -> Stream[T]:
@@ -146,14 +110,9 @@ class Stream(Generic[T]):
             order_desc=overrides.get("order_desc", q.order_desc),
             limit_val=overrides.get("limit_val", q.limit_val),
             offset_val=overrides.get("offset_val", q.offset_val),
+            live_buffer=overrides.get("live_buffer", q.live_buffer),
         )
-        return Stream(
-            self._source,
-            xf=self._xf,
-            query=new_q,
-            _live_buf=self._live_buf,
-            _live_sub=self._live_sub,
-        )
+        return Stream(self._source, xf=self._xf, query=new_q)
 
     def _with_filter(self, f: Filter) -> Stream[T]:
         return self._replace_query(filters=(*self._query.filters, f))
@@ -207,14 +166,13 @@ class Stream(Generic[T]):
     # ── Live mode ───────────────────────────────────────────────────
 
     def live(self, buffer: BackpressureBuffer[Observation[Any]] | None = None) -> Stream[T]:
-        """Return a stream that yields backfill then live data (infinite iterator).
+        """Return a stream whose iteration never ends — backfill then live tail.
 
-        Only valid on backend-backed streams. Transforms downstream of a live
-        stream just see an infinite iterator — they don't need to know about
-        liveness. Call .live() before .transform(), not after.
+        Only valid on backend-backed streams. Transforms downstream just see
+        an infinite iterator. Call .live() before .transform(), not after.
 
-        Default buffer: KeepLast(). Subscribes to the backend BEFORE backfill
-        starts and deduplicates by observation id.
+        Default buffer: KeepLast(). The backend handles subscription, dedup,
+        and backpressure — how it does so is its business.
         """
         if isinstance(self._source, Stream):
             raise TypeError(
@@ -222,8 +180,7 @@ class Stream(Generic[T]):
                 "Call .live() on the source stream, then .transform()."
             )
         buf = buffer if buffer is not None else KeepLast()
-        sub = self._source.subscribe(buf)
-        return Stream(self._source, query=self._query, _live_buf=buf, _live_sub=sub)
+        return self._replace_query(live_buffer=buf)
 
     # ── Terminals ───────────────────────────────────────────────────
 

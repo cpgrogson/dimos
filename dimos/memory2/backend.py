@@ -101,7 +101,19 @@ class ListBackend(Generic[T]):
         return obs
 
     def iterate(self, query: StreamQuery) -> Iterator[Observation[T]]:
-        """Snapshot + apply all filters/ordering/offset/limit in Python."""
+        """Snapshot + apply all filters/ordering/offset/limit in Python.
+
+        If query.live_buffer is set, subscribes before backfill, then
+        switches to a live tail that blocks for new observations.
+        """
+        buf = query.live_buffer
+        if buf is not None:
+            # Subscribe BEFORE backfill to avoid missing items
+            sub = self.subscribe(buf)
+            return self._iterate_live(query, buf, sub)
+        return self._iterate_snapshot(query)
+
+    def _iterate_snapshot(self, query: StreamQuery) -> Iterator[Observation[T]]:
         with self._lock:
             snapshot = list(self._observations)
 
@@ -126,6 +138,34 @@ class ListBackend(Generic[T]):
             snapshot = snapshot[: query.limit_val]
 
         yield from snapshot
+
+    def _iterate_live(
+        self,
+        query: StreamQuery,
+        buf: BackpressureBuffer[Observation[T]],
+        sub: DisposableBase,
+    ) -> Iterator[Observation[T]]:
+        from dimos.memory2.buffer import ClosedError
+
+        # Backfill phase — use snapshot query (without live) for the backfill
+        last_id = -1
+        for obs in self._iterate_snapshot(query):
+            last_id = max(last_id, obs.id)
+            yield obs
+
+        # Live tail
+        filters = query.filters
+        try:
+            while True:
+                obs = buf.take()
+                if obs.id <= last_id:
+                    continue
+                last_id = obs.id
+                if filters and not all(f.matches(obs) for f in filters):
+                    continue
+                yield obs
+        except (ClosedError, StopIteration):
+            sub.dispose()
 
     def count(self, query: StreamQuery) -> int:
         return sum(1 for _ in self.iterate(query))
