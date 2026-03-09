@@ -16,9 +16,17 @@ from collections.abc import Callable
 import hashlib
 import json
 import os
+import platform
 import string
+import sys
 from typing import Any, Generic, TypeVar, overload
 import uuid
+
+
+def is_jetson() -> bool:
+    """Check if running on a Jetson (aarch64 Linux)."""
+    return sys.platform == "linux" and platform.machine() == "aarch64"
+
 
 _T = TypeVar("_T")
 

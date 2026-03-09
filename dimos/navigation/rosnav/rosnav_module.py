@@ -85,6 +85,7 @@ from dimos.msgs.sensor_msgs import Image, ImageFormat, PointCloud2
 from dimos.msgs.tf2_msgs.TFMessage import TFMessage
 from dimos.navigation.base import NavigationState
 from dimos.utils.data import get_data
+from dimos.utils.generic import is_jetson
 from dimos.utils.logging_config import setup_logger
 from dimos.utils.transform_utils import euler_to_quaternion
 
@@ -120,8 +121,13 @@ class ROSNavConfig(DockerModuleConfig):
             "TARGETARCH": "arm64" if platform.machine() == "aarch64" else "amd64"
         }
     )
-    docker_gpus: str | None = "all"
-    docker_extra_args: list[str] = field(default_factory=lambda: ["--cap-add=NET_ADMIN"])
+    docker_gpus: str | None = None if is_jetson() else "all"
+    docker_extra_args: list[str] = field(
+        default_factory=lambda: [
+            "--cap-add=NET_ADMIN",
+            *(["--runtime=nvidia"] if is_jetson() else []),
+        ]
+    )
     docker_env: dict[str, str] = field(
         default_factory=lambda: {
             "ROS_DISTRO": "humble",
