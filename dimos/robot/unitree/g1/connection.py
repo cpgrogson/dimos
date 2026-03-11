@@ -44,6 +44,14 @@ class G1ConnectionBase(Module, ABC):
 
     @rpc
     @abstractmethod
+    def start(self) -> None: ...
+
+    @rpc
+    @abstractmethod
+    def stop(self) -> None: ...
+
+    @rpc
+    @abstractmethod
     def move(self, twist: Twist, duration: float = 0.0) -> None: ...
 
     @rpc
