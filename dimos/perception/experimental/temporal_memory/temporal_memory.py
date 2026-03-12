@@ -27,7 +27,7 @@ import os
 from pathlib import Path
 import threading
 import time
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from reactivex import Subject, interval
 from reactivex.disposable import Disposable
@@ -36,6 +36,7 @@ from dimos.agents.annotation import skill
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
+from dimos.models.vl.base import VlModel
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.sensor_msgs import Image
 from dimos.msgs.sensor_msgs.Image import sharpness_barrier
@@ -48,9 +49,6 @@ from .entity_graph_db import EntityGraphDB
 from .frame_window_accumulator import Frame, FrameWindowAccumulator
 from .temporal_state import TemporalState
 from .window_analyzer import WindowAnalyzer
-
-if TYPE_CHECKING:
-    from dimos.models.vl.base import VlModel
 
 try:
     from .clip_filter import CLIPFrameFilter
