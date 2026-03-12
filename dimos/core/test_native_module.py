@@ -96,12 +96,15 @@ class StubProducer(Module):
 @pytest.fixture
 def crash_module() -> Generator[StubNativeModule, None, None]:
     """Create a StubNativeModule that dies after 0.2s, ensuring cleanup."""
+    before = {t.ident for t in threading.enumerate()}
     mod = StubNativeModule(die_after=0.2)
     yield mod
-    # Join watchdog, LCM, and event-loop threads from the test thread.
-    # The watchdog's self.stop() can't join itself, so without this the
-    # threads leak. stop() is idempotent.
-    mod.stop()
+    # The watchdog calls stop() from its own thread, which sets
+    # _module_closed=True. A second stop() from here is then a no-op,
+    # so we explicitly join any threads the test created.
+    for t in threading.enumerate():
+        if t.ident not in before and t is not threading.current_thread():
+            t.join(timeout=5)
 
 
 def test_process_crash_triggers_stop(crash_module: StubNativeModule) -> None:
