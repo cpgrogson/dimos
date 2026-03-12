@@ -41,7 +41,7 @@ import struct
 import subprocess
 import threading
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import zipfile
 
 import numpy as np
@@ -66,12 +66,15 @@ from dimos.utils.ros1 import (
     serialize_pose_stamped,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 logger = setup_logger()
 PI = math.pi
 
 # Google Drive folder containing environment zips
 _GDRIVE_FOLDER_ID = "1UD5v6cSfcwIMWmsq9WSk7blJut4kgb-1"
-_DEFAULT_SCENE = "office_1"
+_DEFAULT_SCENE = "japanese_room_1"
 _SUPPORTED_SYSTEMS = {"Linux"}
 _SUPPORTED_ARCHS = {"x86_64", "AMD64"}
 
@@ -143,18 +146,35 @@ def _download_unity_scene(scene: str, dest_dir: Path) -> Path:
     zip_path = dest_dir / f"{scene}.zip"
 
     if not zip_path.exists():
-        print("\n" + "=" * 70, flush=True)
-        print(f"  DOWNLOADING UNITY SIMULATOR — scene: '{scene}'", flush=True)
-        print("  Source: Google Drive (VLA Challenge environments)", flush=True)
-        print("  Size: ~130-580 MB per scene (depends on scene complexity)", flush=True)
-        print(f"  Destination: {dest_dir}", flush=True)
-        print("  This is a one-time download. Subsequent runs use the cache.", flush=True)
-        print("=" * 70 + "\n", flush=True)
+        print(flush=True)
+        print("=" * 70, flush=True)
+        print("", flush=True)
+        print("  UNITY SIMULATOR DOWNLOAD", flush=True)
+        print("", flush=True)
+        print(f"  The Unity simulator scene '{scene}' was not found locally.", flush=True)
+        print("  Downloading it now from Google Drive. This is a ONE-TIME", flush=True)
+        print("  download — future runs will use the cached binary.", flush=True)
+        print("", flush=True)
+        print("  Source:  VLA Challenge (Google Drive)", flush=True)
+        print(f"  Scene:   {scene}", flush=True)
+        print("  Size:    ~130-580 MB (depends on scene)", flush=True)
+        print(f"  Cache:   {dest_dir}", flush=True)
+        print("", flush=True)
+        print("  gdown will print progress below. This may take a few", flush=True)
+        print("  minutes depending on your connection speed.", flush=True)
+        print("", flush=True)
+        print("=" * 70, flush=True)
+        print(flush=True)
         gdown.download_folder(
             id=_GDRIVE_FOLDER_ID,
             output=str(dest_dir),
             quiet=False,
         )
+        print(flush=True)
+        print("=" * 70, flush=True)
+        print("  Download complete. Locating scene zip...", flush=True)
+        print("=" * 70, flush=True)
+        print(flush=True)
         # gdown downloads all scenes into a subfolder; find our zip
         for candidate in dest_dir.rglob(f"{scene}.zip"):
             zip_path = candidate
@@ -169,9 +189,10 @@ def _download_unity_scene(scene: str, dest_dir: Path) -> Path:
     # Extract
     extract_dir = dest_dir / scene
     if not extract_dir.exists():
-        logger.info(f"Extracting {zip_path}...")
+        print(f"  Extracting {zip_path.name}...", flush=True)
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(dest_dir)
+        print("  Extraction complete.", flush=True)
 
     binary = extract_dir / "environment" / "Model.x86_64"
     if not binary.exists():
@@ -209,6 +230,47 @@ def _validate_platform() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Host-side binary resolution (runs BEFORE worker deploy)
+# ---------------------------------------------------------------------------
+
+
+def resolve_unity_binary(
+    scene: str = _DEFAULT_SCENE,
+    cache_dir: str = ".unity_envs",
+    auto_download: bool = True,
+) -> Callable[[], str | None]:
+    """Return a blueprint requirement check that resolves the Unity binary.
+
+    This runs on the HOST process during blueprint.build(), before modules
+    are deployed to worker subprocesses. If the binary is not cached and
+    auto_download is True, it downloads the scene from Google Drive.
+
+    Usage in a blueprint::
+
+        unity_sim = autoconnect(
+            UnityBridgeModule.blueprint(),
+            ...
+        ).requirements(resolve_unity_binary())
+    """
+
+    def _check() -> str | None:
+        cache = Path(cache_dir).expanduser()
+        candidate = cache / scene / "environment" / "Model.x86_64"
+        if candidate.exists():
+            return None  # already cached, no error
+
+        if not auto_download:
+            return f"Unity scene '{scene}' not found at {candidate} and auto_download is disabled."
+
+        _validate_platform()
+        logger.info(f"Unity binary not found, downloading scene '{scene}'...")
+        _download_unity_scene(scene, cache)
+        return None  # success
+
+    return _check
+
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
@@ -230,8 +292,8 @@ class UnityBridgeConfig(ModuleConfig):
     # Only used when unity_binary is not found and auto_download is True.
     unity_scene: str = _DEFAULT_SCENE
 
-    # Directory to download/cache Unity scenes.
-    unity_cache_dir: str = "~/.cache/smartnav/unity_envs"
+    # Directory to download/cache Unity scenes (relative to cwd).
+    unity_cache_dir: str = ".unity_envs"
 
     # Auto-download the scene from Google Drive if binary is missing.
     auto_download: bool = True
@@ -349,6 +411,7 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
         self._unity_ready = threading.Event()
         self._unity_process: subprocess.Popen | None = None  # type: ignore[type-arg]
         self._send_queue: Queue[tuple[str, bytes]] = Queue()
+        self._binary_path = self._resolve_binary()
 
     def __getstate__(self) -> dict[str, Any]:  # type: ignore[override]
         state: dict[str, Any] = super().__getstate__()  # type: ignore[no-untyped-call]
@@ -374,6 +437,7 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
         self._send_queue = Queue()
         self._unity_ready = threading.Event()
         self._running = False
+        self._binary_path = self._resolve_binary()
 
     @rpc
     def start(self) -> None:
@@ -409,7 +473,12 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
     # ---- Unity process management -----------------------------------------
 
     def _resolve_binary(self) -> Path | None:
-        """Find the Unity binary, downloading if needed. Returns None to skip launch."""
+        """Find the Unity binary from config or cache. Does NOT download.
+
+        Downloads happen on the HOST via resolve_unity_binary() (called from
+        the blueprint requirement hook) before the module is deployed to a
+        worker subprocess.
+        """
         cfg = self.config
 
         # Explicit path provided
@@ -421,28 +490,20 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
                     p = (Path(__file__).resolve().parent / cfg.unity_binary).resolve()
             if p.exists():
                 return p
-            if not cfg.auto_download:
-                logger.error(
-                    f"Unity binary not found at {p} and auto_download is disabled. "
-                    f"Set unity_binary to a valid path or enable auto_download."
-                )
-                return None
+            logger.warning(f"Unity binary not found at {p}")
+            return None
 
-        # Auto-download
-        if cfg.auto_download:
-            _validate_platform()
-            cache = Path(cfg.unity_cache_dir).expanduser()
-            candidate = cache / cfg.unity_scene / "environment" / "Model.x86_64"
-            if candidate.exists():
-                return candidate
-            logger.info(f"Unity binary not found, downloading scene '{cfg.unity_scene}'...")
-            return _download_unity_scene(cfg.unity_scene, cache)
+        # Check cache (download already happened on host)
+        cache = Path(cfg.unity_cache_dir).expanduser()
+        candidate = cache / cfg.unity_scene / "environment" / "Model.x86_64"
+        if candidate.exists():
+            return candidate
 
         return None
 
     def _launch_unity(self) -> None:
         """Launch the Unity simulator binary as a subprocess."""
-        binary_path = self._resolve_binary()
+        binary_path = self._binary_path
         if binary_path is None:
             logger.info("No Unity binary — TCP server will wait for external connection")
             return

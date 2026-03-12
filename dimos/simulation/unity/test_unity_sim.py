@@ -172,7 +172,7 @@ class TestPlatformValidation:
 
 class TestPickle:
     def test_module_survives_pickle(self):
-        m = UnityBridgeModule(unity_binary="")
+        m = UnityBridgeModule(unity_binary="", auto_download=False)
         m2 = pickle.loads(pickle.dumps(m))
         assert hasattr(m2, "_cmd_lock")
         assert m2._running is False
@@ -205,7 +205,7 @@ class TestTCPBridge:
     def test_handshake_and_data_flow(self):
         """Mock Unity connects, sends a PointCloud2, verifies bridge publishes it."""
         port = _find_free_port()
-        m = UnityBridgeModule(unity_binary="", unity_port=port)
+        m = UnityBridgeModule(unity_binary="", auto_download=False, unity_port=port)
         ts = _wire(m)
 
         m._running = True
@@ -240,7 +240,7 @@ class TestTCPBridge:
 
 class TestKinematicSim:
     def test_odometry_published(self):
-        m = UnityBridgeModule(unity_binary="", sim_rate=100.0)
+        m = UnityBridgeModule(unity_binary="", auto_download=False, sim_rate=100.0)
         ts = _wire(m)
 
         m._running = True
@@ -255,7 +255,7 @@ class TestKinematicSim:
         assert ts["odometry"]._messages[0].frame_id == "map"
 
     def test_cmd_vel_moves_robot(self):
-        m = UnityBridgeModule(unity_binary="", sim_rate=200.0)
+        m = UnityBridgeModule(unity_binary="", auto_download=False, sim_rate=200.0)
         ts = _wire(m)
 
         m._on_cmd_vel(Twist(linear=[1.0, 0.0, 0.0], angular=[0.0, 0.0, 0.0]))
