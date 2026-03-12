@@ -85,7 +85,7 @@ class Detection2DBBox(Detection2D):
     confidence: float
     name: str
     ts: float
-    image: Image | None
+    image: Image
 
     def to_repr_dict(self) -> dict[str, Any]:
         """Return a dictionary representation of the detection for display purposes."""

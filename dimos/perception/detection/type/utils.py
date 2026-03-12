@@ -53,18 +53,18 @@ class TableStr:
     def __str__(self) -> str:
         console = Console(force_terminal=True, legacy_windows=False)
 
-        ts_str = f"{to_timestamp(self.image.ts):.3f}" if self.image is not None else "?"  # type: ignore[attr-defined]
-
         # Create a table for detections
         table = Table(
-            title=f"{self.__class__.__name__} [{len(self.detections)} detections @ {ts_str}]",  # type: ignore[attr-defined]
+            title=f"{self.__class__.__name__} [{len(self.detections)} detections @ {to_timestamp(self.image.ts):.3f}]",  # type: ignore[attr-defined]
             show_header=True,
             show_edge=True,
         )
 
         # Dynamically build columns based on the first detection's dict keys
         if not self.detections:  # type: ignore[attr-defined]
-            return f"   {self.__class__.__name__} [0 detections @ {ts_str}]"  # type: ignore[attr-defined]
+            return (
+                f"   {self.__class__.__name__} [0 detections @ {to_timestamp(self.image.ts):.3f}]"  # type: ignore[attr-defined]
+            )
 
         # Cache all repr_dicts to avoid double computation
         detection_dicts = [det.to_repr_dict() for det in self]  # type: ignore[attr-defined]
