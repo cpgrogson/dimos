@@ -65,7 +65,7 @@ class CompositeResource(Resource):
     def __init__(self) -> None:
         self._disposables = CompositeDisposable()
 
-    def own(self, *disposables: DisposableBase) -> None:
+    def register_disposables(self, *disposables: DisposableBase) -> None:
         """Register child disposables to be disposed when this resource stops."""
         for d in disposables:
             self._disposables.add(d)

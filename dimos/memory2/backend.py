@@ -109,14 +109,11 @@ class LiveChannel(ABC, Generic[T]):
 # ── Blob storage ──────────────────────────────────────────────────
 
 
-class BlobStore(Resource, ABC):
+class BlobStore(Resource):
     """Persistent storage for encoded payload blobs.
 
     Separates payload data from metadata indexing so that large blobs
     (images, point clouds) don't penalize metadata queries.
-
-    Extends Resource (start/stop) but does NOT manage its dependencies'
-    lifecycle — the caller owns the session / connection.
     """
 
     @abstractmethod
@@ -138,7 +135,7 @@ class BlobStore(Resource, ABC):
 # ── Vector storage ───────────────────────────────────────────────
 
 
-class VectorStore(Resource, ABC):
+class VectorStore(Resource):
     """Pluggable storage and ANN index for embedding vectors.
 
     Separates vector indexing from metadata so backends can swap

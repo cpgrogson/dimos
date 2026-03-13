@@ -67,15 +67,19 @@ class SqliteBlobStore(BlobStore):
         )
 
     def get(self, stream: str, key: int) -> bytes:
-        self._ensure_table(stream)
-        row = self._conn.execute(
-            f'SELECT data FROM "{stream}_blob" WHERE id = ?', (key,)
-        ).fetchone()
+        try:
+            row = self._conn.execute(
+                f'SELECT data FROM "{stream}_blob" WHERE id = ?', (key,)
+            ).fetchone()
+        except Exception:
+            raise KeyError(f"No blob for stream={stream!r}, key={key}")
         if row is None:
             raise KeyError(f"No blob for stream={stream!r}, key={key}")
         result: bytes = row[0]
         return result
 
     def delete(self, stream: str, key: int) -> None:
-        self._ensure_table(stream)
-        self._conn.execute(f'DELETE FROM "{stream}_blob" WHERE id = ?', (key,))
+        try:
+            self._conn.execute(f'DELETE FROM "{stream}_blob" WHERE id = ?', (key,))
+        except Exception:
+            pass

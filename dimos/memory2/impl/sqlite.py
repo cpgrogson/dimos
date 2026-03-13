@@ -628,7 +628,7 @@ class SqliteSession(Session):
         config["codec"] = codec
 
         backend: SqliteBackend[Any] = SqliteBackend(backend_conn, name, **config)
-        self.own(backend)
+        self.register_disposables(backend)
         return backend
 
     def list_streams(self) -> list[str]:
