@@ -15,6 +15,10 @@
 from __future__ import annotations
 
 from abc import abstractmethod
+from typing import TYPE_CHECKING, Self
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 from reactivex.abc import DisposableBase
 from reactivex.disposable import CompositeDisposable
@@ -49,11 +53,16 @@ class Resource(DisposableBase):
         """
         self.stop()
 
-    def __enter__(self) -> Resource:
+    def __enter__(self) -> Self:
         self.start()
         return self
 
-    def __exit__(self, *args: object) -> None:
+    def __exit__(
+        self,
+        exctype: type[BaseException] | None,
+        excinst: BaseException | None,
+        exctb: TracebackType | None,
+    ) -> None:
         self.stop()
 
 
