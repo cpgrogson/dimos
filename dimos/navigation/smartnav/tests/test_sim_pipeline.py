@@ -1,0 +1,229 @@
+# Copyright 2026 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Integration test: verify modules survive the real blueprint deployment path.
+
+These tests exercise the actual framework machinery -- pickling, transport wiring,
+cross-process communication -- not just direct method calls.
+"""
+
+import pickle
+import time
+
+import numpy as np
+
+from dimos.core.stream import In, Out
+from dimos.core.transport import LCMTransport
+from dimos.msgs.geometry_msgs.Pose import Pose
+from dimos.msgs.geometry_msgs.Quaternion import Quaternion
+from dimos.msgs.geometry_msgs.Twist import Twist
+from dimos.msgs.geometry_msgs.Vector3 import Vector3
+from dimos.msgs.nav_msgs.Odometry import Odometry
+from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
+from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_generation import (
+    SensorScanGeneration,
+)
+from dimos.navigation.smartnav.modules.tui_control.tui_control import TUIControlModule
+from dimos.navigation.smartnav.modules.unity_bridge.unity_bridge import UnityBridgeModule
+
+
+class TestModulePickling:
+    """Every module must survive pickle round-trip (the deployment path)."""
+
+    def test_sensor_scan_generation_pickles(self):
+        m = SensorScanGeneration()
+        m2 = pickle.loads(pickle.dumps(m))
+        assert hasattr(m2, "_lock")
+        assert m2._latest_odom is None
+
+    def test_unity_bridge_pickles(self):
+        m = UnityBridgeModule(sim_rate=200.0)
+        m2 = pickle.loads(pickle.dumps(m))
+        assert hasattr(m2, "_cmd_lock")
+        assert m2._running is False
+
+    def test_tui_control_pickles(self):
+        m = TUIControlModule(max_speed=2.0)
+        m2 = pickle.loads(pickle.dumps(m))
+        assert hasattr(m2, "_lock")
+        assert m2._fwd == 0.0
+
+    def test_all_native_modules_pickle(self):
+        """NativeModule wrappers must also pickle cleanly."""
+        from dimos.navigation.smartnav.modules.far_planner.far_planner import FarPlanner
+        from dimos.navigation.smartnav.modules.local_planner.local_planner import LocalPlanner
+        from dimos.navigation.smartnav.modules.path_follower.path_follower import PathFollower
+        from dimos.navigation.smartnav.modules.tare_planner.tare_planner import TarePlanner
+        from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import (
+            TerrainAnalysis,
+        )
+
+        for cls in [TerrainAnalysis, LocalPlanner, PathFollower, FarPlanner, TarePlanner]:
+            m = cls()
+            m2 = pickle.loads(pickle.dumps(m))
+            assert type(m2) is cls, f"{cls.__name__} failed pickle round-trip"
+
+
+class TestTransportWiring:
+    """Test that modules publish/subscribe through real LCM transports."""
+
+    def test_unity_bridge_publishes_odometry_via_transport(self):
+        """UnityBridge sim loop should publish through _transport, not .publish()."""
+        m = UnityBridgeModule(sim_rate=200.0)
+
+        # Wire a real LCM transport to the odometry output
+        transport = LCMTransport("/_test/smartnav/odom", Odometry)
+        m.odometry._transport = transport
+
+        received = []
+        transport.subscribe(lambda msg: received.append(msg))
+
+        # Simulate one odometry publish (same code path as _sim_loop)
+        quat = Quaternion.from_euler(Vector3(0.0, 0.0, 0.0))
+        odom = Odometry(
+            ts=time.time(),
+            frame_id="map",
+            child_frame_id="sensor",
+            pose=Pose(
+                position=[1.0, 2.0, 0.75],
+                orientation=[quat.x, quat.y, quat.z, quat.w],
+            ),
+        )
+        m.odometry._transport.publish(odom)
+
+        # LCM transport delivers asynchronously -- give it a moment
+        time.sleep(0.1)
+        assert len(received) >= 1
+        assert abs(received[0].x - 1.0) < 0.01
+
+    def test_sensor_scan_subscribes_and_publishes_via_transport(self):
+        """SensorScanGeneration should work entirely through transports."""
+        m = SensorScanGeneration()
+
+        # Wire transports (topic string must NOT include #type suffix -- type is the 2nd arg)
+        odom_transport = LCMTransport("/_test/smartnav/scan_gen/odom", Odometry)
+        scan_in_transport = LCMTransport("/_test/smartnav/scan_gen/registered_scan", PointCloud2)
+        scan_out_transport = LCMTransport("/_test/smartnav/scan_gen/sensor_scan", PointCloud2)
+        odom_out_transport = LCMTransport("/_test/smartnav/scan_gen/odom_at_scan", Odometry)
+
+        m.odometry._transport = odom_transport
+        m.registered_scan._transport = scan_in_transport
+        m.sensor_scan._transport = scan_out_transport
+        m.odometry_at_scan._transport = odom_out_transport
+
+        # Start the module (subscribes via transport)
+        m.start()
+
+        # Collect outputs
+        scan_results = []
+        scan_out_transport.subscribe(lambda msg: scan_results.append(msg))
+
+        # Publish odometry
+        quat = Quaternion.from_euler(Vector3(0.0, 0.0, 0.0))
+        odom = Odometry(
+            ts=time.time(),
+            frame_id="map",
+            child_frame_id="sensor",
+            pose=Pose(
+                position=[0.0, 0.0, 0.0],
+                orientation=[quat.x, quat.y, quat.z, quat.w],
+            ),
+        )
+        odom_transport.publish(odom)
+        time.sleep(0.05)
+
+        # Publish a point cloud
+        points = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
+        cloud = PointCloud2.from_numpy(points, frame_id="map", timestamp=time.time())
+        scan_in_transport.publish(cloud)
+        time.sleep(0.2)
+
+        assert len(scan_results) >= 1
+        assert scan_results[0].frame_id == "sensor_at_scan"
+
+    def test_tui_publishes_twist_via_transport(self):
+        """TUI module should publish cmd_vel through its transport."""
+        m = TUIControlModule(max_speed=2.0, publish_rate=50.0)
+
+        transport = LCMTransport("/_test/smartnav/tui/cmd_vel", Twist)
+        m.cmd_vel._transport = transport
+
+        # Also wire way_point so it doesn't error
+        from dimos.msgs.geometry_msgs.PointStamped import PointStamped
+
+        wp_transport = LCMTransport("/_test/smartnav/tui/way_point", PointStamped)
+        m.way_point._transport = wp_transport
+
+        received = []
+        transport.subscribe(lambda msg: received.append(msg))
+
+        m._handle_key("w")  # forward
+        m.start()
+        time.sleep(0.15)  # let publish loop run a few times
+        m.stop()
+
+        assert len(received) >= 1
+        assert received[-1].linear.x > 0  # forward velocity
+
+
+class TestPortTypeCompatibility:
+    """Verify that module port types are compatible for autoconnect."""
+
+    def test_all_stream_types_match(self):
+        from typing import get_args, get_origin, get_type_hints
+
+        from dimos.navigation.smartnav.modules.local_planner.local_planner import LocalPlanner
+        from dimos.navigation.smartnav.modules.path_follower.path_follower import PathFollower
+        from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_generation import (
+            SensorScanGeneration,
+        )
+        from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import (
+            TerrainAnalysis,
+        )
+        from dimos.navigation.smartnav.modules.unity_bridge.unity_bridge import UnityBridgeModule
+
+        def get_streams(cls):
+            hints = get_type_hints(cls)
+            streams = {}
+            for name, hint in hints.items():
+                origin = get_origin(hint)
+                if origin in (In, Out):
+                    direction = "in" if origin is In else "out"
+                    msg_type = get_args(hint)[0]
+                    streams[name] = (direction, msg_type)
+            return streams
+
+        sim = get_streams(UnityBridgeModule)
+        scan = get_streams(SensorScanGeneration)
+        terrain = get_streams(TerrainAnalysis)
+        planner = get_streams(LocalPlanner)
+        follower = get_streams(PathFollower)
+
+        # Odometry types must match across all consumers
+        odom_type = sim["odometry"][1]
+        assert scan["odometry"][1] == odom_type
+        assert terrain["odometry"][1] == odom_type
+        assert planner["odometry"][1] == odom_type
+        assert follower["odometry"][1] == odom_type
+
+        # Path: planner out == follower in
+        assert planner["path"][1] == follower["path"][1]
+
+        # cmd_vel: follower out == sim in
+        assert follower["cmd_vel"][1] == sim["cmd_vel"][1]
+
+        # registered_scan: all consumers match
+        pc_type = scan["registered_scan"][1]
+        assert terrain["registered_scan"][1] == pc_type
+        assert planner["registered_scan"][1] == pc_type

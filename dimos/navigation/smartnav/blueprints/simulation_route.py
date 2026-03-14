@@ -1,0 +1,149 @@
+# Copyright 2026 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Simulation + FAR route planner blueprint.
+
+Data flow:
+    ClickToGoal.way_point → (remapped to "goal") → FarPlanner.goal
+    FarPlanner.way_point → LocalPlanner.way_point
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from dimos.core.blueprints import autoconnect
+from dimos.navigation.smartnav.blueprints._rerun_helpers import (
+    global_map_override,
+    goal_path_override,
+    path_override,
+    sensor_scan_override,
+    static_floor,
+    static_robot,
+    terrain_map_ext_override,
+    terrain_map_override,
+    waypoint_override,
+)
+from dimos.navigation.smartnav.modules.click_to_goal.click_to_goal import ClickToGoal
+from dimos.navigation.smartnav.modules.far_planner.far_planner import FarPlanner
+from dimos.navigation.smartnav.modules.global_map.global_map import GlobalMap
+from dimos.navigation.smartnav.modules.local_planner.local_planner import LocalPlanner
+from dimos.navigation.smartnav.modules.path_follower.path_follower import PathFollower
+from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_generation import (
+    SensorScanGeneration,
+)
+from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import TerrainAnalysis
+from dimos.navigation.smartnav.modules.terrain_map_ext.terrain_map_ext import TerrainMapExt
+from dimos.navigation.smartnav.modules.unity_bridge.unity_bridge import UnityBridgeModule
+from dimos.protocol.pubsub.impl.lcmpubsub import LCM
+from dimos.visualization.rerun.bridge import _resolve_viewer_mode, rerun_bridge
+
+
+def _rerun_blueprint() -> Any:
+    import rerun.blueprint as rrb
+
+    return rrb.Blueprint(
+        rrb.Vertical(
+            rrb.Spatial3DView(origin="world", name="3D"),
+            rrb.Spatial2DView(origin="world/color_image", name="Camera"),
+            row_shares=[2, 1],
+        ),
+    )
+
+
+rerun_config = {
+    "blueprint": _rerun_blueprint,
+    "pubsubs": [LCM()],
+    "min_interval_sec": 0.25,
+    "visual_override": {
+        "world/camera_info": UnityBridgeModule.rerun_suppress_camera_info,
+        "world/sensor_scan": sensor_scan_override,
+        "world/terrain_map": terrain_map_override,
+        "world/terrain_map_ext": terrain_map_ext_override,
+        "world/global_map": global_map_override,
+        "world/path": path_override,
+        "world/way_point": waypoint_override,
+        "world/goal_path": goal_path_override,
+    },
+    "static": {
+        "world/color_image": UnityBridgeModule.rerun_static_pinhole,
+        "world/floor": static_floor,
+        "world/tf/robot": static_robot,
+    },
+}
+
+simulation_route_blueprint = autoconnect(
+    UnityBridgeModule.blueprint(
+        unity_binary="",
+        unity_scene="home_building_1",
+    ),
+    SensorScanGeneration.blueprint(),
+    TerrainAnalysis.blueprint(
+        extra_args=[
+            "--obstacleHeightThre",
+            "0.2",
+            "--maxRelZ",
+            "1.5",
+        ]
+    ),
+    TerrainMapExt.blueprint(),
+    LocalPlanner.blueprint(
+        extra_args=[
+            "--autonomyMode",
+            "true",
+            "--maxSpeed",
+            "2.0",
+            "--autonomySpeed",
+            "2.0",
+            "--obstacleHeightThre",
+            "0.2",
+            "--maxRelZ",
+            "1.5",
+            "--minRelZ",
+            "-1.0",
+        ]
+    ),
+    PathFollower.blueprint(
+        extra_args=[
+            "--autonomyMode",
+            "true",
+            "--maxSpeed",
+            "2.0",
+            "--autonomySpeed",
+            "2.0",
+            "--maxAccel",
+            "4.0",
+            "--slowDwnDisThre",
+            "0.2",
+        ]
+    ),
+    FarPlanner.blueprint(),
+    ClickToGoal.blueprint(),
+    GlobalMap.blueprint(),
+    rerun_bridge(viewer_mode=_resolve_viewer_mode(), **rerun_config),
+).remappings(
+    [
+        # In route mode, only FarPlanner should drive way_point to LocalPlanner.
+        # Disconnect ClickToGoal's way_point so it doesn't conflict/override.
+        (ClickToGoal, "way_point", "_click_way_point_unused"),
+    ]
+)
+
+
+def main() -> None:
+    simulation_route_blueprint.build({"n_workers": 9}).loop()
+
+
+if __name__ == "__main__":
+    main()

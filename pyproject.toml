@@ -457,4 +457,6 @@ ignore = [
     "dimos/dashboard/dimos.rbl",
     "dimos/web/dimos_interface/themes.json",
     "dimos/manipulation/manipulation_module.py",
+    "dimos/navigation/smartnav/modules/*/main.cpp",
+    "dimos/navigation/smartnav/common/*.hpp",
 ]
