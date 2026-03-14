@@ -19,8 +19,28 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import sys
 import tempfile
 import webbrowser
+
+
+def _find_package_root(filepath: str) -> str | None:
+    """Walk up from *filepath* looking for the outermost package directory.
+
+    Returns the parent of that package (i.e. the directory that should be on
+    ``sys.path``), or ``None`` if the file is not inside a package.
+    """
+    d = os.path.dirname(filepath)
+    root = None
+    while os.path.isfile(os.path.join(d, "__init__.py")):
+        root = d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    if root is not None:
+        return os.path.dirname(root)
+    return None
 
 
 def _build_html(python_file: str, *, show_disconnected: bool = True) -> str:
@@ -28,6 +48,12 @@ def _build_html(python_file: str, *, show_disconnected: bool = True) -> str:
     filepath = os.path.abspath(python_file)
     if not os.path.isfile(filepath):
         raise FileNotFoundError(filepath)
+
+    # Ensure the file's package root is importable so that relative imports
+    # like ``from smartnav.blueprints.foo import bar`` work.
+    pkg_root = _find_package_root(filepath)
+    if pkg_root and pkg_root not in sys.path:
+        sys.path.insert(0, pkg_root)
 
     spec = importlib.util.spec_from_file_location("_render_target", filepath)
     if spec is None or spec.loader is None:
