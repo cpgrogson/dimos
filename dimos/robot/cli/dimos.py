@@ -550,19 +550,6 @@ def send(
     topic_send(topic, message_expr)
 
 
-@main.command()
-def graph(
-    python_file: str = typer.Argument(..., help="Python file containing Blueprint globals"),
-    no_disconnected: bool = typer.Option(
-        False, "--no-disconnected", help="Hide disconnected streams"
-    ),
-) -> None:
-    """Render blueprint graphs from a Python file and open in browser."""
-    from dimos.utils.cli.graph import main as graph_main
-
-    graph_main(python_file, show_disconnected=not no_disconnected)
-
-
 @main.command(name="rerun-bridge")
 def rerun_bridge_cmd(
     viewer_mode: str = typer.Option(

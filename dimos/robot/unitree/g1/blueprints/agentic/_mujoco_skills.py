@@ -156,4 +156,4 @@ _mujoco_agentic_skills = autoconnect(
     speak_skill(),
 )
 
-__all__ = ["G1MujocoSkillContainer", "g1_mujoco_skills", "_mujoco_agentic_skills"]
+__all__ = ["G1MujocoSkillContainer", "_mujoco_agentic_skills", "g1_mujoco_skills"]

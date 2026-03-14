@@ -18,7 +18,7 @@ NavBot class for navigation-related functionality.
 Encapsulates ROS transport and topic remapping for Unitree robots.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import field
 import logging
 from pathlib import Path
 import platform
@@ -406,9 +406,7 @@ class ROSNav(Module):
         self._spin_thread.start()
 
         self.goal_request.subscribe(self._on_goal_pose)
-        self.clicked_point.subscribe(
-            lambda pt: self._on_goal_pose(pt.to_pose_stamped())
-        )
+        self.clicked_point.subscribe(lambda pt: self._on_goal_pose(pt.to_pose_stamped()))
         self.stop_explore_cmd.subscribe(self._on_stop_cmd)
         self.teleop_cmd_vel.subscribe(self._on_teleop_cmd_vel)
         logger.info("NavigationModule started with ROS2 spinning")

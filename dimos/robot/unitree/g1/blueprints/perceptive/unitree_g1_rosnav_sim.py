@@ -84,13 +84,19 @@ _vis_sim = vis_module(
     },
 )
 
-unitree_g1_rosnav_sim = autoconnect(
-    _vis_sim,
-    _mapper,
-    websocket_vis(),
-    ROSNav.blueprint(mode="simulation", vehicle_height=1.24),
-).remappings([
-    (WebsocketVisModule, "cmd_vel", "teleop_cmd_vel"),
-]).global_config(n_workers=4, robot_model="unitree_g1")
+unitree_g1_rosnav_sim = (
+    autoconnect(
+        _vis_sim,
+        _mapper,
+        websocket_vis(),
+        ROSNav.blueprint(mode="simulation", vehicle_height=1.24),
+    )
+    .remappings(
+        [
+            (WebsocketVisModule, "cmd_vel", "teleop_cmd_vel"),
+        ]
+    )
+    .global_config(n_workers=4, robot_model="unitree_g1")
+)
 
 __all__ = ["unitree_g1_rosnav_sim"]
