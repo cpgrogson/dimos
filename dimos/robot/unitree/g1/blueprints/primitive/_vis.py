@@ -42,6 +42,10 @@ def _convert_navigation_costmap(grid: Any) -> Any:
     )
 
 
+def _static_path_frame(rr: Any) -> list[Any]:
+    return [rr.Transform3D(parent_frame="tf#/sensor")]
+
+
 def _static_base_link(rr: Any) -> list[Any]:
     return [
         rr.Boxes3D(
@@ -65,6 +69,7 @@ _vis = vis_module(
         },
         "static": {
             "world/tf/base_link": _static_base_link,
+            "world/path": _static_path_frame,
         },
     },
 )

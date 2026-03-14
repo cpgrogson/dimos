@@ -462,7 +462,9 @@ class ROSNav(Module):
 
     def _on_ros_path(self, msg: ROSPath) -> None:
         dimos_path = _path_from_ros(msg)
-        dimos_path.frame_id = "base_link"
+        # The CMU nav stack publishes the path in the "vehicle" frame which
+        # corresponds to "sensor" in the DimOS TF tree (map → sensor).
+        dimos_path.frame_id = "sensor"
         self.path.publish(dimos_path)
 
     def _on_ros_odom(self, msg: "ROSOdometry") -> None:

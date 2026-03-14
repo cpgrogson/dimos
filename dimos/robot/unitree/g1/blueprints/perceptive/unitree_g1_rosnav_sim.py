@@ -33,6 +33,7 @@ from dimos.robot.unitree.g1.blueprints.primitive._vis import (
     _convert_global_map,
     _convert_navigation_costmap,
     _static_base_link,
+    _static_path_frame,
 )
 from dimos.visualization.vis_module import vis_module
 from dimos.web.websocket_vis.websocket_vis_module import WebsocketVisModule, websocket_vis
@@ -78,6 +79,7 @@ _vis_sim = vis_module(
         "static": {
             "world/tf/base_link": _static_base_link,
             "world/color_image": _static_sim_pinhole,
+            "world/path": _static_path_frame,
         },
     },
 )
