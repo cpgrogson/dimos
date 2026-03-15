@@ -85,7 +85,9 @@ unitree_g1_nav_onboard = (
         FastLio2.blueprint(
             host_ip=os.getenv("LIDAR_HOST_IP", "192.168.123.164"),
             lidar_ip=os.getenv("LIDAR_IP", "192.168.123.120"),
-            init_pose=[0.0, 0.0, 1.2, 0.0, 0.0, 0.0, 1.0],  # G1 lidar mount height
+            # G1 lidar mount: 1.2m height, 180° around X (upside-down mount)
+            # [x, y, z, qx, qy, qz, qw] — quaternion (1,0,0,0) = 180° X rotation
+            init_pose=[0.0, 0.0, 1.2, 1.0, 0.0, 0.0, 0.0],
             map_freq=1.0,  # Publish global map at 1 Hz
         ),
         SensorScanGeneration.blueprint(),
@@ -113,7 +115,7 @@ unitree_g1_nav_onboard = (
                 "--maxRelZ",
                 "1.5",
                 "--minRelZ",
-                "-1.0",
+                "-1.5",
             ]
         ),
         PathFollower.blueprint(

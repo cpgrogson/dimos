@@ -35,6 +35,7 @@ from pathlib import Path
 import socket
 from typing import TYPE_CHECKING, Annotated
 
+from pydantic import field_validator
 from pydantic.experimental.pipeline import validate_as
 
 from dimos.core.native_module import NativeModule, NativeModuleConfig
@@ -65,7 +66,7 @@ def _get_local_ips() -> list[str]:
     ips: list[str] = []
     try:
         for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            addr = info[4][0]
+            addr = str(info[4][0])
             if addr not in ips:
                 ips.append(addr)
     except socket.gaierror:
@@ -121,6 +122,15 @@ class FastLio2Config(NativeModuleConfig):
     # Set z to sensor mount height above ground for correct terrain analysis.
     # Quaternion (qx, qy, qz, qw) for angled mounts; identity = [0,0,0, 0,0,0,1].
     init_pose: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+
+    @field_validator("init_pose")
+    @classmethod
+    def _check_init_pose_length(cls, v: list[float]) -> list[float]:
+        if len(v) != 7:
+            raise ValueError(
+                f"init_pose must have exactly 7 elements [x,y,z,qx,qy,qz,qw], got {len(v)}"
+            )
+        return v
 
     # Frame IDs for output messages
     frame_id: str = "map"
@@ -213,37 +223,39 @@ class FastLio2(
 
         # Check if host_ip is actually assigned to this machine.
         if host_ip not in local_ips:
-            _find_candidate_ips(lidar_ip, local_ips)
             same_subnet = _find_candidate_ips(lidar_ip, local_ips)
 
-            msg = (
-                f"FastLio2: host_ip={host_ip!r} is not assigned to any local interface.\n"
-                f"  Lidar IP: {lidar_ip}\n"
-                f"  Local IPs found: {', '.join(local_ips) or '(none)'}\n"
-            )
             if same_subnet:
-                msg += (
-                    f"  Suggested host_ip (same /24 subnet as lidar): "
-                    f"{', '.join(same_subnet)}\n"
-                    f"  → Try: FastLio2.blueprint(host_ip={same_subnet[0]!r})\n"
+                picked = same_subnet[0]
+                _logger.warning(
+                    f"FastLio2: host_ip={host_ip!r} not found locally. "
+                    f"Auto-correcting to {picked!r} (same subnet as lidar {lidar_ip}).",
+                    configured_ip=host_ip,
+                    corrected_ip=picked,
+                    lidar_ip=lidar_ip,
+                    local_ips=local_ips,
                 )
+                self.config.host_ip = picked
+                host_ip = picked
             else:
-                msg += (
+                subnet_prefix = ".".join(lidar_ip.split(".")[:3])
+                msg = (
+                    f"FastLio2: host_ip={host_ip!r} is not assigned to any local interface.\n"
+                    f"  Lidar IP: {lidar_ip}\n"
+                    f"  Local IPs found: {', '.join(local_ips) or '(none)'}\n"
                     f"  No local IP found on the same subnet as lidar ({lidar_ip}).\n"
                     f"  The lidar network interface may be down or unconfigured.\n"
-                    f"  → Check: ip addr | grep {'.'.join(lidar_ip.split('.')[:3])}\n"
-                    f"  → Or assign an IP: sudo ip addr add "
-                    f"{'.'.join(lidar_ip.split('.')[:3])}.5/24 dev <iface>\n"
+                    f"  → Check: ip addr | grep {subnet_prefix}\n"
+                    f"  → Or assign an IP: "
+                    f"sudo ip addr add {subnet_prefix}.5/24 dev <iface>\n"
                 )
-
-            _logger.error(msg)
-            raise RuntimeError(msg)
+                _logger.error(msg)
+                raise RuntimeError(msg)
 
         # Check if we can bind a UDP socket on host_ip (port 0 = ephemeral).
         try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.bind((host_ip, 0))
-            sock.close()
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+                sock.bind((host_ip, 0))
         except OSError as e:
             _logger.error(
                 f"FastLio2: Cannot bind UDP socket on host_ip={host_ip!r}: {e}\n"
