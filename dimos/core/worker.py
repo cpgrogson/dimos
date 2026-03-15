@@ -19,13 +19,13 @@ import multiprocessing
 from multiprocessing.connection import Connection
 import os
 from pathlib import Path
-import platform
 import sys
 import threading
 import traceback
 from typing import TYPE_CHECKING, Any
 
 from dimos.core.global_config import GlobalConfig, global_config
+from dimos.core.library_config import apply_library_config
 from dimos.utils.logging_config import setup_logger
 from dimos.utils.sequential_ids import SequentialIds
 
@@ -366,13 +366,7 @@ def _suppress_console_output() -> None:
 
 
 def _worker_entrypoint(conn: Connection, worker_id: int) -> None:
-    # Fix for Jetson (aarch64) and other ARM Linux devices: glibc on aarch64
-    # does not reserve surplus TLS space, so lazily dlopen'd libs that use
-    # static TLS (e.g. libc10.so) fail with:
-    #   "cannot allocate memory in static TLS block"
-    # x86_64 glibc reserves ~1664 bytes of headroom and is unaffected.
-    if sys.platform == "linux" and platform.machine() == "aarch64":
-        _preload_bundled_native_libs()
+    apply_library_config()
     instances: dict[int, Any] = {}
 
     try:
