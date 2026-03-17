@@ -14,6 +14,10 @@
 
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("DA3_LOG_LEVEL", "WARN")
+
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 

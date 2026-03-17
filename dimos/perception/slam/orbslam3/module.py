@@ -59,7 +59,7 @@ class OrbSlam3Config(NativeModuleConfig):
 
     # Frame IDs for output messages
     frame_id: str = "map"
-    child_frame_id: str = "camera"
+    child_frame_id: str = "camera_optical"
 
     # Camera settings YAML (relative to config/ dir, or absolute path)
     settings: Annotated[

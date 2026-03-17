@@ -166,6 +166,16 @@ class Webcam(CameraHardware[WebcamConfig]):
 
     @property
     def camera_info(self) -> CameraInfo:
-        return self.config.camera_info
+        info = self.config.camera_info
+        # Fill in resolution from config if not explicitly set
+        if info.width == 0 and info.height == 0:
+            info.width = self.config.width
+            info.height = self.config.height
+            # Set reasonable default intrinsics if K is all zeros
+            if all(v == 0.0 for v in info.K):
+                fx = fy = float(self.config.width)  # ~90° FOV approximation
+                cx, cy = self.config.width / 2.0, self.config.height / 2.0
+                info.K = [fx, 0.0, cx, 0.0, fy, cy, 0.0, 0.0, 1.0]
+        return info
 
     def emit(self, image: Image) -> None: ...
