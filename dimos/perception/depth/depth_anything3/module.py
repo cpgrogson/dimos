@@ -67,7 +67,7 @@ class Config(ModuleConfig):
 
     # inference options
     use_ray_pose: bool = False
-    ref_view_strategy: str = "saddle_balanced"
+    ref_view_strategy: str = "middle"
 
     # outputs
     publish_confidence: bool = False
@@ -108,10 +108,19 @@ class DepthAnything3Module(Module[Config]):
 
     def _publish_result(self, image: Image, depth: np.ndarray, conf: np.ndarray) -> None:
         """Publish depth (and optionally confidence) for a single frame."""
+        h, w = image.height, image.width
+        if depth.shape[:2] != (h, w):
+            from cv2 import INTER_LINEAR, resize
+
+            depth = resize(depth, (w, h), interpolation=INTER_LINEAR)
         self.depth_image.publish(
             Image(data=depth, format=ImageFormat.DEPTH, frame_id=image.frame_id, ts=image.ts)
         )
         if self.config.publish_confidence:
+            if conf.shape[:2] != (h, w):
+                from cv2 import INTER_LINEAR, resize
+
+                conf = resize(conf, (w, h), interpolation=INTER_LINEAR)
             self.confidence.publish(
                 Image(data=conf, format=ImageFormat.DEPTH, frame_id=image.frame_id, ts=image.ts)
             )
@@ -155,8 +164,9 @@ class DepthAnything3Module(Module[Config]):
             if len(keyframes) < 2:
                 return None
             results = self._predict(keyframes)
-            depth, conf = results[-1]
-            return (keyframes[-1], depth, conf)
+            mid = len(keyframes) // 2
+            depth, conf = results[mid]
+            return (keyframes[mid], depth, conf)
 
         return backpressure(
             self._sharp_stream().pipe(
@@ -240,5 +250,7 @@ def deploy(
     module.depth_image.transport = LCMTransport(f"{prefix}/depth", Image)
     module.confidence.transport = LCMTransport(f"{prefix}/confidence", Image)
 
+    module.start()
+    return module
     module.start()
     return module

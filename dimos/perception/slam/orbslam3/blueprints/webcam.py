@@ -134,7 +134,7 @@ orbslam3_depth_webcam = autoconnect(
     DepthAnything3Module.blueprint(
         model=DA3Model.SMALL,
         mode=DA3Mode.TEMPORAL,
-        window_frames=5,
+        window_frames=10,
     ),
     rerun_bridge(
         blueprint=_orbslam3_depth_rerun_blueprint,
@@ -146,6 +146,6 @@ orbslam3_depth_webcam = autoconnect(
             "world/depth_image": _relog_depth,
         },
     ),
-)
+).global_config(n_workers=4)
 
 __all__ = ["orbslam3_depth_webcam", "orbslam3_webcam"]
