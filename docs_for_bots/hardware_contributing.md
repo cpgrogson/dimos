@@ -358,7 +358,7 @@ class MySensorConfig(NativeModuleConfig):
     executable: str = "cpp/result/bin/my_sensor"
     build_command: str | None = "nix build .#my_sensor"
     cwd: str | None = "cpp"
-    rebuild_on_change: list[str] = ["cpp/"]  # auto-rebuild when these paths change (future feature)
+    rebuild_on_change: list[str] = ["cpp/main.cpp", "cpp/CMakeLists.txt"]  # auto-rebuild when these change (future feature)
 
     # Hardware config — these become CLI args automatically
     host_ip: str = "192.168.1.5"
