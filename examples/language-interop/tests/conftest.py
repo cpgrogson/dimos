@@ -31,6 +31,7 @@ SIMPLEROBOT_DIR = EXAMPLES_DIR.parent / "simplerobot"
 RUST_DIR = EXAMPLES_DIR / "rust"
 TS_DIR = EXAMPLES_DIR / "ts"
 CPP_DIR = EXAMPLES_DIR / "cpp"
+LUA_DIR = EXAMPLES_DIR / "lua"
 
 
 def pytest_configure(config: pytest.Config) -> None:
