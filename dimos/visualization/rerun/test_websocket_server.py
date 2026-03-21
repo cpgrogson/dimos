@@ -72,6 +72,7 @@ class MockViewerPublisher:
 
     async def _connect(self) -> Any:
         import websockets.asyncio.client as ws_client
+
         return await ws_client.connect(self._url)
 
     # ------------------------------------------------------------------
@@ -148,8 +149,10 @@ def _make_module(port: int = _TEST_PORT) -> RerunWebSocketServer:
 
 def _wait_for_server(port: int, timeout: float = 3.0) -> None:
     """Block until the WebSocket server accepts an upgrade handshake."""
+
     async def _probe() -> None:
         import websockets.asyncio.client as ws_client
+
         async with ws_client.connect(f"ws://127.0.0.1:{port}/ws"):
             pass
 

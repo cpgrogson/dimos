@@ -38,6 +38,8 @@ from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
+from dimos.msgs.geometry_msgs.Twist import Twist
+from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -57,11 +59,13 @@ class RerunWebSocketServer(Module[Config]):
 
     Outputs:
         clicked_point: 3-D world-space point from the most recent viewer click.
+        tele_cmd_vel: Twist velocity commands from keyboard teleop, including stop events.
     """
 
     default_config = Config
 
     clicked_point: Out[PointStamped]
+    tele_cmd_vel: Out[Twist]
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -115,9 +119,7 @@ class RerunWebSocketServer(Module[Config]):
             host="0.0.0.0",
             port=self.config.port,
         ):
-            logger.info(
-                f"RerunWebSocketServer listening on ws://0.0.0.0:{self.config.port}/ws"
-            )
+            logger.info(f"RerunWebSocketServer listening on ws://0.0.0.0:{self.config.port}/ws")
             await self._stop_event.wait()
 
     async def _handle_client(self, websocket: Any) -> None:
@@ -154,14 +156,24 @@ class RerunWebSocketServer(Module[Config]):
             self.clicked_point.publish(pt)
 
         elif msg_type == "twist":
-            # Twist messages are not yet wired to a stream; log for observability.
-            logger.debug(
-                "RerunWebSocketServer: twist lin=({linear_x},{linear_y},{linear_z}) "
-                "ang=({angular_x},{angular_y},{angular_z})".format(**msg)
+            twist = Twist(
+                linear=Vector3(
+                    float(msg.get("linear_x", 0)),
+                    float(msg.get("linear_y", 0)),
+                    float(msg.get("linear_z", 0)),
+                ),
+                angular=Vector3(
+                    float(msg.get("angular_x", 0)),
+                    float(msg.get("angular_y", 0)),
+                    float(msg.get("angular_z", 0)),
+                ),
             )
+            logger.debug(f"RerunWebSocketServer: twist → {twist}")
+            self.tele_cmd_vel.publish(twist)
 
         elif msg_type == "stop":
             logger.debug("RerunWebSocketServer: stop")
+            self.tele_cmd_vel.publish(Twist.zero())
 
         elif msg_type == "heartbeat":
             logger.debug(f"RerunWebSocketServer: heartbeat ts={msg.get('timestamp_ms')}")

@@ -34,8 +34,6 @@ import threading
 import time
 from typing import Any
 
-import pytest
-
 from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
 
 _E2E_PORT = 13032
@@ -281,7 +279,7 @@ class TestViewerBinaryConnectMode:
         server.start()
         _wait_for_server(_E2E_PORT)
 
-        connected = threading.Event()
+        threading.Event()
         received: list[Any] = []
 
         def _on_pt(pt: Any) -> None:
@@ -299,7 +297,11 @@ class TestViewerBinaryConnectMode:
                 "--connect",
                 f"--ws-url=ws://127.0.0.1:{_E2E_PORT}/ws",
             ],
-            env={"DISPLAY": "", "HOME": "/home/dimos", "PATH": "/home/dimos/.cargo/bin:/usr/bin:/bin"},
+            env={
+                "DISPLAY": "",
+                "HOME": "/home/dimos",
+                "PATH": "/home/dimos/.cargo/bin:/usr/bin:/bin",
+            },
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -307,7 +309,6 @@ class TestViewerBinaryConnectMode:
         # Give the viewer up to 5 s to connect its WebSocket client to our server.
         # We detect the connection by waiting for the server to accept a client.
         deadline = time.monotonic() + 5.0
-        viewer_connected = False
         while time.monotonic() < deadline:
             # Check if any connection was established by sending a message and
             # verifying the viewer is still running.
