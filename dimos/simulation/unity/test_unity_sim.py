@@ -46,9 +46,7 @@ _is_linux_x86 = platform.system() == "Linux" and platform.machine() in ("x86_64"
 _has_display = bool(os.environ.get("DISPLAY"))
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 class _MockTransport:
@@ -131,9 +129,7 @@ def _recv_tcp(sock) -> tuple[str, bytes]:
     return d, buf
 
 
-# ---------------------------------------------------------------------------
 # Config & Platform — fast, runs everywhere
-# ---------------------------------------------------------------------------
 
 
 class TestConfig:
@@ -164,9 +160,7 @@ class TestPlatformValidation:
             _validate_platform()
 
 
-# ---------------------------------------------------------------------------
 # Pickle — fast, runs everywhere
-# ---------------------------------------------------------------------------
 
 
 class TestPickle:
@@ -179,9 +173,7 @@ class TestPickle:
         m2.stop()
 
 
-# ---------------------------------------------------------------------------
 # ROS1 Deserialization — fast, runs everywhere
-# ---------------------------------------------------------------------------
 
 
 class TestROS1Deserialization:
@@ -195,9 +187,7 @@ class TestROS1Deserialization:
         assert frame_id == "map"
 
 
-# ---------------------------------------------------------------------------
 # TCP Bridge — needs sockets, ~1s, runs everywhere
-# ---------------------------------------------------------------------------
 
 
 class TestTCPBridge:
@@ -232,9 +222,7 @@ class TestTCPBridge:
         np.testing.assert_allclose(received_pts, pts, atol=0.01)
 
 
-# ---------------------------------------------------------------------------
 # Kinematic Sim — needs threading, ~1s, runs everywhere
-# ---------------------------------------------------------------------------
 
 
 class TestKinematicSim:
@@ -270,9 +258,7 @@ class TestKinematicSim:
         assert last_odom.x > 0.5
 
 
-# ---------------------------------------------------------------------------
 # Rerun Config — fast, runs everywhere
-# ---------------------------------------------------------------------------
 
 
 class TestRerunConfig:
@@ -287,10 +273,8 @@ class TestRerunConfig:
         assert UnityBridgeModule.rerun_suppress_camera_info(None) is None
 
 
-# ---------------------------------------------------------------------------
 # Live Unity — slow, requires Linux x86_64 + DISPLAY
 # These are skipped in CI and on unsupported platforms.
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.slow

@@ -29,7 +29,6 @@ Protocol (per message on the TCP stream):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import math
 import os
@@ -44,6 +43,7 @@ import time
 from typing import Any
 
 import numpy as np
+from pydantic import Field
 from reactivex.disposable import Disposable
 
 from dimos.core.core import rpc
@@ -75,9 +75,7 @@ _SUPPORTED_SYSTEMS = {"Linux"}
 _SUPPORTED_ARCHS = {"x86_64", "AMD64"}
 
 
-# ---------------------------------------------------------------------------
 # TCP protocol helpers
-# ---------------------------------------------------------------------------
 
 
 def _recvall(sock: socket.socket, size: int) -> bytes:
@@ -118,9 +116,7 @@ def _write_tcp_command(sock: socket.socket, command: str, params: dict[str, Any]
     )
 
 
-# ---------------------------------------------------------------------------
 # Platform validation
-# ---------------------------------------------------------------------------
 
 
 def _validate_platform() -> None:
@@ -142,12 +138,9 @@ def _validate_platform() -> None:
         )
 
 
-# ---------------------------------------------------------------------------
 # Config
-# ---------------------------------------------------------------------------
 
 
-@dataclass
 class UnityBridgeConfig(ModuleConfig):
     """Configuration for the Unity bridge / vehicle simulator.
 
@@ -172,7 +165,7 @@ class UnityBridgeConfig(ModuleConfig):
     headless: bool = False
 
     # Extra CLI args to pass to the Unity binary.
-    unity_extra_args: list[str] = field(default_factory=list)
+    unity_extra_args: list[str] = Field(default_factory=list)
 
     # Vehicle parameters
     vehicle_height: float = 0.75
@@ -187,9 +180,7 @@ class UnityBridgeConfig(ModuleConfig):
     sim_rate: float = 200.0
 
 
-# ---------------------------------------------------------------------------
 # Module
-# ---------------------------------------------------------------------------
 
 
 class UnityBridgeModule(Module[UnityBridgeConfig]):
@@ -249,8 +240,6 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
     def rerun_suppress_camera_info(_: Any) -> None:
         """Suppress CameraInfo logging — the static pinhole handles 3D projection."""
         return None
-
-    # ---- lifecycle --------------------------------------------------------
 
     def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
         super().__init__(**kwargs)
@@ -332,8 +321,6 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
             self._unity_process = None
         super().stop()
 
-    # ---- Unity process management -----------------------------------------
-
     def _resolve_binary(self) -> Path | None:
         """Find the Unity binary from config or LFS data.
 
@@ -414,8 +401,6 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
                     f"The binary may still be loading — it will connect when ready."
                 )
 
-    # ---- input callbacks --------------------------------------------------
-
     def _on_cmd_vel(self, twist: Twist) -> None:
         with self._cmd_lock:
             self._fwd_speed = twist.linear.x
@@ -432,8 +417,6 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
         if len(near) >= 10:
             with self._state_lock:
                 self._terrain_z = 0.8 * self._terrain_z + 0.2 * near[:, 2].mean()
-
-    # ---- Unity TCP bridge -------------------------------------------------
 
     def _unity_loop(self) -> None:
         server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -588,8 +571,6 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
             connected = self._unity_connected
         if connected:
             self._send_queue.put((topic, data))
-
-    # ---- kinematic sim loop -----------------------------------------------
 
     def _sim_loop(self) -> None:
         dt = 1.0 / self.config.sim_rate
