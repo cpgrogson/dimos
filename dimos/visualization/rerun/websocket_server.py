@@ -140,6 +140,7 @@ class RerunWebSocketServer(Module[Config]):
         logger.info(f"RerunWebSocketServer: viewer connected from {addr}")
         try:
             async for raw in websocket:
+                logger.info(f"RerunWebSocketServer: received message: {raw[:120]}")
                 self._dispatch(raw)
         except websockets.ConnectionClosed as exc:
             logger.debug(f"RerunWebSocketServer: client {addr} disconnected ({exc})")
@@ -181,7 +182,7 @@ class RerunWebSocketServer(Module[Config]):
                     float(msg.get("angular_z", 0)),
                 ),
             )
-            logger.debug(f"RerunWebSocketServer: twist → {twist}")
+            logger.info(f"RerunWebSocketServer: publishing twist on tele_cmd_vel, transport={getattr(self.tele_cmd_vel, '_transport', 'NONE')}")
             self.tele_cmd_vel.publish(twist)
 
         elif msg_type == "stop":

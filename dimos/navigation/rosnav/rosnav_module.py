@@ -302,7 +302,7 @@ class ROSNav(Module, NavigationInterface):
     goal_request: In[PoseStamped]
     clicked_point: In[PointStamped]
     stop_explore_cmd: In[Bool]
-    teleop_cmd_vel: In[Twist]
+    tele_cmd_vel: In[Twist]
 
     color_image: Out[Image]
     lidar: Out[PointCloud2]
@@ -332,7 +332,13 @@ class ROSNav(Module, NavigationInterface):
     _last_odom: PoseStamped | None = None
 
     def __init__(self, *args, **kwargs) -> None:  # type: ignore[no-untyped-def]
-        super().__init__(*args, **kwargs)
+        logger.info("[ROSNav] __init__ starting")
+        try:
+            super().__init__(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"[ROSNav] super().__init__ failed: {e}", exc_info=True)
+            raise
+        logger.info("[ROSNav] super().__init__ done")
         import rclpy
         from rclpy.node import Node
 
@@ -342,8 +348,10 @@ class ROSNav(Module, NavigationInterface):
         self._navigation_state = NavigationState.IDLE
         self._goal_reached = False
 
+        logger.info("[ROSNav] initializing rclpy")
         if not rclpy.ok():  # type: ignore[attr-defined]
             rclpy.init()
+        logger.info("[ROSNav] rclpy initialized, creating node")
 
         self._node = Node("navigation_module")
 
@@ -394,19 +402,28 @@ class ROSNav(Module, NavigationInterface):
 
     @rpc
     def start(self) -> None:
-        self._running = True
+        logger.info("[ROSNav] start() called")
+        try:
+            self._running = True
 
-        # Create and start the spin thread for ROS2 node spinning
-        self._spin_thread = threading.Thread(
-            target=self._spin_node, daemon=True, name="ROS2SpinThread"
-        )
-        self._spin_thread.start()
+            # Create and start the spin thread for ROS2 node spinning
+            self._spin_thread = threading.Thread(
+                target=self._spin_node, daemon=True, name="ROS2SpinThread"
+            )
+            self._spin_thread.start()
+            logger.info("[ROSNav] ROS2 spin thread started")
 
-        self.goal_request.subscribe(self._on_goal_pose)
-        self.clicked_point.subscribe(lambda pt: self._on_goal_pose(pt.to_pose_stamped()))
-        self.stop_explore_cmd.subscribe(self._on_stop_cmd)
-        self.teleop_cmd_vel.subscribe(self._on_teleop_cmd_vel)
-        logger.info("NavigationModule started with ROS2 spinning")
+            logger.info("[ROSNav] subscribing to goal_request")
+            self.goal_request.subscribe(self._on_goal_pose)
+            logger.info("[ROSNav] subscribing to clicked_point")
+            self.clicked_point.subscribe(lambda pt: self._on_goal_pose(pt.to_pose_stamped()))
+            logger.info("[ROSNav] subscribing to stop_explore_cmd")
+            self.stop_explore_cmd.subscribe(self._on_stop_cmd)
+            logger.info("[ROSNav] subscribing to tele_cmd_vel")
+            self.tele_cmd_vel.subscribe(self._on_tele_cmd_vel)
+            logger.info("[ROSNav] start() complete — all subscriptions active")
+        except Exception as e:
+            logger.error(f"[ROSNav] start() failed: {e}", exc_info=True)
 
     def _spin_node(self) -> None:
         import rclpy
@@ -516,7 +533,8 @@ class ROSNav(Module, NavigationInterface):
             ros_pose = _pose_stamped_to_ros(self._last_odom)
             self.goal_pose_pub.publish(ros_pose)
 
-    def _on_teleop_cmd_vel(self, msg: Twist) -> None:
+    def _on_tele_cmd_vel(self, msg: Twist) -> None:
+        print(f'''msg = {msg}''')
         with self._teleop_lock:
             if not self._teleop_active:
                 self._teleop_active = True
@@ -534,6 +552,7 @@ class ROSNav(Module, NavigationInterface):
             self._teleop_timer.start()
 
         # Forward teleop command to output
+        logger.info("tele_cmd_vel received", linear_x=msg.linear.x, linear_y=msg.linear.y, angular_z=msg.angular.z)
         self.cmd_vel.publish(msg)
 
     def _end_teleop_override(self) -> None:
