@@ -30,10 +30,13 @@ user clicks in the 3D viewport.
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import threading
 import time
 from typing import Any
+
+import pytest
 
 from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
 
@@ -259,6 +262,13 @@ class TestViewerBinaryConnectMode:
     """Smoke test: dimos-viewer binary starts in --connect mode and its WebSocket
     client attempts to connect to our Python server."""
 
+    @pytest.mark.skipif(
+        shutil.which("dimos-viewer") is None
+        or "--connect" not in subprocess.run(
+            ["dimos-viewer", "--help"], capture_output=True, text=True
+        ).stdout,
+        reason="dimos-viewer binary not installed or does not support --connect",
+    )
     def test_viewer_ws_client_connects(self) -> None:
         """dimos-viewer --connect starts and its WS client connects to our server."""
         server = _make_server()
@@ -307,11 +317,13 @@ class TestViewerBinaryConnectMode:
         except subprocess.TimeoutExpired:
             proc.kill()
 
+        stdout = proc.stdout.read().decode(errors="replace") if proc.stdout else ""
         stderr = proc.stderr.read().decode(errors="replace") if proc.stderr else ""
         server.stop()
 
         # The viewer should log that it is connecting to our WS URL.
-        # Even without a display, the log output appears before the GUI loop starts.
-        assert "ws://127.0.0.1" in stderr or proc.returncode is not None, (
-            f"Viewer did not attempt WS connection. stderr:\n{stderr}"
+        # Check both stdout and stderr since log output destination varies.
+        combined = stdout + stderr
+        assert f"ws://127.0.0.1:{_E2E_PORT}" in combined, (
+            f"Viewer did not attempt WS connection.\nstdout:\n{stdout}\nstderr:\n{stderr}"
         )
