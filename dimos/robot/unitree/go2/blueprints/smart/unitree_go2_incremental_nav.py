@@ -18,44 +18,41 @@
 Like ``unitree_go2_smartnav`` but replaces PGO + ScanCorrector with the
 lighter-weight IncrementalMap module (no GTSAM dependency).
 
+Builds on unitree_go2 which already includes:
+  GO2Connection, VoxelGridMapper, CostMapper, ReplanningAStarPlanner,
+  WavefrontFrontierExplorer, PatrollingModule
+
+We add IncrementalMap and remap GO2Connection streams to feed it.
+
 Data flow:
     GO2Connection.lidar  (remapped → registered_scan) → IncrementalMap
-    GO2Connection.odom   (remapped → raw_odom)         → IncrementalMap.odom
-    IncrementalMap.global_map                           → VoxelGridMapper
-    IncrementalMap.corrected_odom                       → (downstream via odom)
-    VoxelGridMapper → CostMapper → ReplanningAStarPlanner
-    ReplanningAStarPlanner.cmd_vel → GO2Connection
+    GO2Connection.odom   (remapped → raw_odom)         → IncrementalMap.raw_odom
+    IncrementalMap.odom  (PoseStamped)                  → Planner, Explorer
+    IncrementalMap.global_map                           → VoxelGridMapper (via lidar remap)
 
 Usage:
     dimos run unitree-go2-incremental-nav --robot-ip 192.168.123.161
 """
 
 from dimos.core.blueprints import autoconnect
-from dimos.mapping.costmapper import CostMapper
 from dimos.mapping.voxels import VoxelGridMapper
-from dimos.navigation.frontier_exploration.wavefront_frontier_goal_selector import (
-    WavefrontFrontierExplorer,
-)
 from dimos.navigation.incremental_map.module import IncrementalMap
-from dimos.navigation.replanning_a_star.module import ReplanningAStarPlanner
-from dimos.robot.unitree.go2.blueprints.basic.unitree_go2_basic import unitree_go2_basic
+from dimos.robot.unitree.go2.blueprints.smart.unitree_go2 import unitree_go2
 from dimos.robot.unitree.go2.connection import GO2Connection
 
 unitree_go2_incremental_nav = (
     autoconnect(
-        unitree_go2_basic,
-        GO2Connection.blueprint(publish_tf=False),
+        unitree_go2,
         IncrementalMap.blueprint(),
-        VoxelGridMapper.blueprint(voxel_size=0.1),
-        CostMapper.blueprint(),
-        ReplanningAStarPlanner.blueprint(),
-        WavefrontFrontierExplorer.blueprint(),
     )
-    .global_config(n_workers=8, robot_model="unitree_go2")
+    .global_config(n_workers=8)
     .remappings(
         [
+            # Feed GO2's lidar into IncrementalMap as registered_scan
             (GO2Connection, "lidar", "registered_scan"),
+            # Feed GO2's odom into IncrementalMap as raw_odom
             (GO2Connection, "odom", "raw_odom"),
+            # Feed IncrementalMap's global_map into VoxelGridMapper
             (VoxelGridMapper, "lidar", "global_map"),
         ]
     )

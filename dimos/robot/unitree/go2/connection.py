@@ -195,7 +195,8 @@ class GO2Connection(Module[_Config], Camera, Pointcloud):
     color_image: Out[Image]
     camera_info: Out[CameraInfo]
 
-    connection: Go2ConnectionProtocol
+    # NOTE: `connection` is created lazily in start() — not in __init__ —
+    # because UnitreeWebRTCConnection cannot be pickled to worker processes.
     camera_info_static: CameraInfo = _camera_info_static()
     _camera_info_thread: Thread | None = None
     _latest_video_frame: Image | None = None
@@ -212,10 +213,13 @@ class GO2Connection(Module[_Config], Camera, Pointcloud):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.connection = make_connection(self.config.ip, self.config.g)
+        # Defer connection creation to start() — __init__ runs before
+        # pickle to the worker process, and the WebRTC connection object
+        # cannot be pickled.
 
-        if hasattr(self.connection, "camera_info_static"):
-            self.camera_info_static = self.connection.camera_info_static
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        super().__setstate__(state)
+        # connection is created in start(), not __init__
 
     @rpc
     def record(self, recording_name: str) -> None:
@@ -231,6 +235,10 @@ class GO2Connection(Module[_Config], Camera, Pointcloud):
     @rpc
     def start(self) -> None:
         super().start()
+
+        self.connection = make_connection(self.config.ip, self.config.g)
+        if hasattr(self.connection, "camera_info_static"):
+            self.camera_info_static = self.connection.camera_info_static
 
         self.connection.start()
 

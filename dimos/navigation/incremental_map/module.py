@@ -354,7 +354,7 @@ class IncrementalMap(Module[IncrementalMapConfig]):
     On loop closure, rebuilds the map from corrected keyframe poses.
 
     Ports:
-        raw_odom (In[Odometry]): Raw odometry from robot or sim.
+        raw_odom (In[PoseStamped]): Raw pose from robot (matches GO2Connection output).
         registered_scan (In[PointCloud2]): World-frame registered lidar.
         global_map (Out[PointCloud2]): Accumulated corrected map.
         corrected_odom (Out[Odometry]): Loop-closure-corrected odometry.
@@ -363,7 +363,7 @@ class IncrementalMap(Module[IncrementalMapConfig]):
 
     default_config = IncrementalMapConfig
 
-    raw_odom: In[Odometry]
+    raw_odom: In[PoseStamped]
     registered_scan: In[PointCloud2]
 
     global_map: Out[PointCloud2]
@@ -412,10 +412,11 @@ class IncrementalMap(Module[IncrementalMapConfig]):
             self._thread.join(timeout=3.0)
         super().stop()
 
-    def _on_odom(self, msg: Odometry) -> None:
-        q = [msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w]
+    def _on_odom(self, msg: PoseStamped) -> None:
+        pose = msg.pose
+        q = [pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w]
         r = Rotation.from_quat(q).as_matrix()
-        t = np.array([msg.x, msg.y, msg.z])
+        t = np.array([pose.x, pose.y, pose.z])
         ts = msg.ts if msg.ts else time.time()
         with self._lock:
             self._last_r = r
