@@ -46,8 +46,8 @@ from dimos.msgs.geometry_msgs.Transform import Transform
 from dimos.msgs.geometry_msgs.Vector3 import Vector3
 from dimos.msgs.sensor_msgs.JointState import JointState
 from dimos.perception.object_scene_registration import ObjectSceneRegistrationModule
-from dimos.visualization.vis_module import vis_module
 from dimos.utils.data import get_data
+from dimos.visualization.vis_module import vis_module
 
 
 def _make_base_pose(

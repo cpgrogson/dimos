@@ -116,19 +116,22 @@ class RerunWebSocketServer(Module[Config]):
         import websockets.asyncio.server as ws_server
 
         self._stop_event = asyncio.Event()
-        self._server_ready.set()
 
         async with ws_server.serve(
             self._handle_client,
             host=self.config.host,
             port=self.config.port,
         ):
+            self._server_ready.set()
             logger.info(
                 f"RerunWebSocketServer listening on ws://{self.config.host}:{self.config.port}/ws"
             )
             await self._stop_event.wait()
 
     async def _handle_client(self, websocket: Any) -> None:
+        if hasattr(websocket, "request") and websocket.request.path != "/ws":
+            await websocket.close(1008, "Not Found")
+            return
         addr = websocket.remote_address
         logger.info(f"RerunWebSocketServer: viewer connected from {addr}")
         try:
