@@ -13,14 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dimos.agents.mcp.mcp_client import McpClient
-from dimos.agents.mcp.mcp_server import McpServer
+from dimos.agents.agent import Agent
 from dimos.core.blueprints import autoconnect
 from dimos.hardware.sensors.camera.realsense.camera import RealSenseCamera
 from dimos.hardware.sensors.camera.zed.compat import ZEDCamera
 from dimos.perception.detection.detectors.yoloe import YoloePromptMode
 from dimos.perception.object_scene_registration import ObjectSceneRegistrationModule
-from dimos.robot.foxglove_bridge import FoxgloveBridge
+from dimos.visualization.vis_module import vis_module
 
 camera_choice = "zed"
 
@@ -34,7 +33,6 @@ else:
 demo_object_scene_registration = autoconnect(
     camera_module,
     ObjectSceneRegistrationModule.blueprint(target_frame="world", prompt_mode=YoloePromptMode.LRPC),
-    FoxgloveBridge.blueprint(),
-    McpServer.blueprint(),
-    McpClient.blueprint(),
+    vis_module("foxglove"),
+    Agent.blueprint(),
 ).global_config(viewer="foxglove")
