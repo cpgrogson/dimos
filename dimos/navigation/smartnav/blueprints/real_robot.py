@@ -35,7 +35,8 @@ from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_genera
 from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import TerrainAnalysis
 from dimos.navigation.smartnav.modules.tui_control.tui_control import TUIControlModule
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
-from dimos.visualization.rerun.bridge import _resolve_viewer_mode, rerun_bridge
+from dimos.core.global_config import global_config
+from dimos.visualization.vis_module import vis_module
 
 
 def _rerun_blueprint() -> Any:
@@ -73,7 +74,7 @@ def make_real_robot_blueprint(
         LocalPlanner.blueprint(),
         PathFollower.blueprint(),
         TUIControlModule.blueprint(),
-        rerun_bridge(viewer_mode=_resolve_viewer_mode(), **rerun_config),
+        vis_module(viewer_backend=global_config.viewer, rerun_config=rerun_config),
     ).remappings(
         [
             # FastLio2 outputs "lidar"; SmartNav modules expect "registered_scan"

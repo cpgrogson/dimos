@@ -47,7 +47,8 @@ from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import 
 from dimos.navigation.smartnav.modules.terrain_map_ext.terrain_map_ext import TerrainMapExt
 from dimos.navigation.smartnav.modules.unity_bridge.unity_bridge import UnityBridgeModule
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
-from dimos.visualization.rerun.bridge import _resolve_viewer_mode, rerun_bridge
+from dimos.core.global_config import global_config
+from dimos.visualization.vis_module import vis_module
 
 
 def _rerun_blueprint() -> Any:
@@ -131,7 +132,7 @@ simulation_route_blueprint = autoconnect(
     FarPlanner.blueprint(),
     ClickToGoal.blueprint(),
     GlobalMap.blueprint(),
-    rerun_bridge(viewer_mode=_resolve_viewer_mode(), **rerun_config),
+    vis_module(viewer_backend=global_config.viewer, rerun_config=rerun_config),
 ).remappings(
     [
         # In route mode, only FarPlanner should drive way_point to LocalPlanner.

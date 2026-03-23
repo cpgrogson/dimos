@@ -29,12 +29,12 @@ import pytest
 
 from dimos.core.blueprints import autoconnect
 from dimos.core.global_config import global_config
-from dimos.mapping.costmapper import cost_mapper
+from dimos.mapping.costmapper import CostMapper
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.navigation.smartnav.modules.odom_adapter.odom_adapter import odom_adapter
+from dimos.navigation.smartnav.modules.odom_adapter.odom_adapter import OdomAdapter
 from dimos.navigation.smartnav.modules.pgo.pgo import PGO
 from dimos.robot.unitree.go2.blueprints.basic.unitree_go2_basic import unitree_go2_basic
 from dimos.robot.unitree.go2.connection import GO2Connection
@@ -61,8 +61,8 @@ def smartnav_coordinator():
     bp = autoconnect(
         unitree_go2_basic,
         PGO.blueprint(),
-        odom_adapter(),
-        cost_mapper(),
+        OdomAdapter.blueprint(),
+        CostMapper.blueprint(),
     ).global_config(
         n_workers=1,
         robot_model="unitree_go2",

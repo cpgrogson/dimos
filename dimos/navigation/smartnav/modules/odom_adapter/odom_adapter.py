@@ -74,4 +74,3 @@ class OdomAdapter(Module[ModuleConfig]):
         self.odom._transport.publish(ps)
 
 
-odom_adapter = OdomAdapter.blueprint

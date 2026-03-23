@@ -195,4 +195,3 @@ class RerunWebSocketServer(Module[Config]):
             logger.warning(f"RerunWebSocketServer: unknown message type {msg_type!r}")
 
 
-rerun_ws_server = RerunWebSocketServer.blueprint

@@ -16,14 +16,14 @@
 """Mapping sub-blueprint: voxel mapper + cost mapper + frontier explorer."""
 
 from dimos.core.blueprints import autoconnect
-from dimos.mapping.costmapper import cost_mapper
+from dimos.mapping.costmapper import CostMapper
 from dimos.mapping.voxels import voxel_mapper
 from dimos.navigation.frontier_exploration.wavefront_frontier_goal_selector import (
-    wavefront_frontier_explorer,
+    WavefrontFrontierExplorer,
 )
 
 _mapper = autoconnect(
     voxel_mapper(voxel_size=0.3),
-    cost_mapper(),
-    wavefront_frontier_explorer(),
+    CostMapper.blueprint(),
+    WavefrontFrontierExplorer.blueprint(),
 )

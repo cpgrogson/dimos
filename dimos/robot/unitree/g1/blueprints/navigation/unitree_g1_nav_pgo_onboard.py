@@ -56,7 +56,7 @@ from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import 
 from dimos.navigation.smartnav.modules.terrain_map_ext.terrain_map_ext import TerrainMapExt
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.robot.unitree.g1.effectors.high_level.dds_sdk import G1HighLevelDdsSdk
-from dimos.visualization.rerun.bridge import _resolve_viewer_mode, rerun_bridge
+from dimos.visualization.rerun.bridge import RerunBridgeModule, _resolve_viewer_mode
 
 
 def _rerun_blueprint() -> Any:
@@ -140,7 +140,7 @@ unitree_g1_nav_pgo_onboard = (
         ),
         ClickToGoal.blueprint(),
         G1HighLevelDdsSdk.blueprint(),
-        rerun_bridge(viewer_mode=_resolve_viewer_mode(), **_rerun_config),
+        RerunBridgeModule.blueprint(viewer_mode=_resolve_viewer_mode(), **_rerun_config),
     )
     .remappings(
         [
