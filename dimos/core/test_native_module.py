@@ -18,10 +18,8 @@ Every test launches the real native_echo.py subprocess via blueprint.build().
 The echo script writes received CLI args to a temp file for assertions.
 """
 
-from collections.abc import Generator
 import json
 from pathlib import Path
-import threading
 import time
 
 import pytest
@@ -92,35 +90,26 @@ class StubProducer(Module):
         pass
 
 
-@pytest.fixture
-def crash_module() -> Generator[StubNativeModule, None, None]:
-    """Create a StubNativeModule that dies after 0.2s, ensuring cleanup."""
-    before = {t.ident for t in threading.enumerate()}
-    mod = StubNativeModule(die_after=0.2)
-    yield mod
-    # The watchdog calls stop() from its own thread, which sets
-    # _module_closed=True. A second stop() from here is then a no-op,
-    # so we explicitly join any threads the test created.
-    for t in threading.enumerate():
-        if t.ident not in before and t is not threading.current_thread():
-            t.join(timeout=5)
-
-
-def test_process_crash_triggers_stop(crash_module: StubNativeModule) -> None:
+def test_process_crash_triggers_stop() -> None:
     """When the native process dies unexpectedly, the watchdog calls stop()."""
-    crash_module.pointcloud.transport = LCMTransport("/pc", PointCloud2)
-    crash_module.start()
+    mod = StubNativeModule(die_after=0.2)
+    mod.pointcloud.transport = LCMTransport("/pc", PointCloud2)
+    mod.start()
 
-    assert crash_module._process is not None
-    pid = crash_module._process.pid
+    assert mod._process is not None
+    pid = mod._process.pid
 
     # Wait for the process to die and the watchdog to call stop()
     for _ in range(30):
         time.sleep(0.1)
-        if crash_module._process is None:
+        if mod._process is None:
             break
 
-    assert crash_module._process is None, f"Watchdog did not clean up after process {pid} died"
+    assert mod._process is None, f"Watchdog did not clean up after process {pid} died"
+
+    # Join the watchdog thread. stop() is idempotent but will now join the
+    # watchdog on the second call since the reference is preserved.
+    mod.stop()
 
     # Wait for background threads (run_forever, _lcm_loop, _watch_process) to finish
     # after the watchdog-triggered stop(). Without this, monitor_threads catches them.
