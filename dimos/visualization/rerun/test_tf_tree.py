@@ -75,7 +75,11 @@ def _make_bridge(*, tf_enabled: bool = True) -> RerunBridgeModule:
     bridge = object.__new__(RerunBridgeModule)
     bridge.config = Config(pubsubs=[], tf_enabled=tf_enabled, entity_prefix="world")
     bridge._last_log = {}
-    bridge._tf_buffer = MultiTBuffer() if tf_enabled else None
+    bridge._last_tf_render_time = 0.0
+    if tf_enabled:
+        bridge._tf = MultiTBuffer()  # type: ignore[assignment]  # inject plain buffer for testing (production uses LCMTF which extends both)
+    else:
+        bridge._tf = None
     return bridge
 
 
@@ -90,8 +94,7 @@ class TestRenderTfTree:
     ) -> None:
         """A→B→C chain produces world/A/B and world/A/B/C entity paths."""
         bridge = _make_bridge()
-        assert bridge._tf_buffer is not None
-        bridge._tf_buffer.receive_transform(
+        bridge.tf.receive_transform(
             _make_transform("odom", "base_link", tx=1.0),
             _make_transform("base_link", "camera", tz=0.5),
         )
@@ -111,8 +114,7 @@ class TestRenderTfTree:
     ) -> None:
         """Two disjoint trees produce separate root paths."""
         bridge = _make_bridge()
-        assert bridge._tf_buffer is not None
-        bridge._tf_buffer.receive_transform(
+        bridge.tf.receive_transform(
             _make_transform("odom", "base_link"),
             _make_transform("map", "marker"),
         )
@@ -128,7 +130,6 @@ class TestRenderTfTree:
     def test_tf_disabled_falls_through(self, mock_log: MagicMock) -> None:
         """When tf_enabled=False, TFMessage is NOT intercepted by the TF path."""
         bridge = _make_bridge(tf_enabled=False)
-        assert bridge._tf_buffer is None
 
         msg = TFMessage(_make_transform("odom", "base_link"))
 
@@ -150,15 +151,14 @@ class TestRenderTfTree:
     ) -> None:
         """Adding a new child after initial render extends the tree."""
         bridge = _make_bridge()
-        assert bridge._tf_buffer is not None
-        bridge._tf_buffer.receive_transform(
+        bridge.tf.receive_transform(
             _make_transform("odom", "base_link"),
         )
         bridge._render_tf_tree()
         assert len(mock_log.call_args_list) == 1
 
         mock_log.reset_mock()
-        bridge._tf_buffer.receive_transform(
+        bridge.tf.receive_transform(
             _make_transform("base_link", "lidar"),
         )
         bridge._render_tf_tree()
@@ -175,9 +175,8 @@ class TestRenderTfTree:
     ) -> None:
         """A cycle in the TF graph does not cause infinite recursion."""
         bridge = _make_bridge()
-        assert bridge._tf_buffer is not None
         # Create A→B→C→A cycle
-        bridge._tf_buffer.receive_transform(
+        bridge.tf.receive_transform(
             _make_transform("A", "B"),
             _make_transform("B", "C"),
             _make_transform("C", "A"),
@@ -187,11 +186,6 @@ class TestRenderTfTree:
         bridge._render_tf_tree()
 
         logged_paths = [c.args[0] for c in mock_log.call_args_list]
-        # A is root (parent but not child among non-cycle roots).
-        # With C→A creating a cycle, A appears as both parent and child,
-        # so the root detection sees A as a child too.
-        # B and C are children. A is also a child (of C).
-        # No frame is *only* a parent, so roots list is empty → no logs.
-        # This is correct: a pure cycle has no root to start DFS from.
-        # The important thing is it doesn't hang or crash.
-        assert len(logged_paths) <= 3  # at most the non-cyclic edges
+        # A pure cycle has no root (every frame is a child of some other frame),
+        # so roots list is empty and no DFS starts → zero logs.
+        assert len(logged_paths) == 0  # pure cycle → no root → no DFS starts

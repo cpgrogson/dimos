@@ -40,7 +40,6 @@ from dimos.msgs.sensor_msgs import Image, PointCloud2
 from dimos.msgs.tf2_msgs import TFMessage
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.protocol.pubsub.patterns import Glob, pattern_matches
-from dimos.protocol.tf import MultiTBuffer
 from dimos.utils.logging_config import setup_logger
 
 # Message types with large payloads that need rate-limiting.
@@ -188,10 +187,7 @@ class RerunBridgeModule(Module):
 
     default_config = Config
     config: Config
-    _last_tf_render_time: float
-    _tf_children: dict[str, list[str]]
-    _tf_roots: list[str]
-    _tf_num_edges: int
+    _last_tf_render_time: float = 0.0
 
     @lru_cache(maxsize=256)
     def _visual_override_for_entity_path(
@@ -257,13 +253,9 @@ class RerunBridgeModule(Module):
                 return
             self._last_log[entity_path] = now
 
-        # Intercept TFMessage: accumulate transforms, rate-limit tree re-renders
-        if self._tf_buffer is not None and isinstance(msg, TFMessage):
-            self._tf_buffer.receive_transform(*msg.transforms)
-            now = time.monotonic()
-            if now - self._last_tf_render_time >= self.config.min_interval_sec:
-                self._last_tf_render_time = now
-                self._render_tf_tree()
+        # TFMessages are handled by the shared TF service via callbacks.
+        # Early return prevents them from hitting the visual_override path.
+        if self.config.tf_enabled and isinstance(msg, TFMessage):
             return
 
         # apply visual overrides (including final_convert which handles .to_rerun())
@@ -287,11 +279,10 @@ class RerunBridgeModule(Module):
         super().start()
 
         self._last_log: dict[str, float] = {}
-        self._tf_buffer: MultiTBuffer | None = MultiTBuffer() if self.config.tf_enabled else None
         self._last_tf_render_time: float = 0.0
-        self._tf_children: dict[str, list[str]] = {}
-        self._tf_roots: list[str] = []
-        self._tf_num_edges: int = 0
+        if self.config.tf_enabled:
+            unsub_tf = self.tf.subscribe(self._on_tf_changed)
+            self._disposables.add(Disposable(unsub_tf))
         logger.info("Rerun bridge starting", viewer_mode=self.config.viewer_mode)
 
         # Initialize and spawn Rerun viewer
@@ -339,44 +330,35 @@ class RerunBridgeModule(Module):
 
         self._log_static()
 
-    def _render_tf_tree(self) -> None:
-        """Render the accumulated TF tree as hierarchical Rerun entity paths.
+    def _on_tf_changed(self) -> None:
+        """Called by TF service on every transform update. Rate-limits re-renders."""
+        now = time.monotonic()
+        if now - self._last_tf_render_time >= self.config.min_interval_sec:
+            self._last_tf_render_time = now
+            self._render_tf_tree()
 
-        Builds an adjacency graph from all known transforms, finds root frames
-        (those that appear only as parents), and DFS-walks the tree to log each
-        transform at its hierarchical entity path (e.g. world/base_link/camera).
+    def _render_tf_tree(self) -> None:
+        """Render the TF tree as hierarchical Rerun entity paths.
+
+        Uses the shared TF service's children_of/roots (cached by edge count)
+        and DFS-walks the tree to log each transform at its hierarchical
+        entity path (e.g. world/base_link/camera).
         """
         import rerun as rr
 
-        assert self._tf_buffer is not None
+        tf = self.tf
+        children = tf.children_of
+        roots = tf.roots
 
-        # Rebuild adjacency cache only when new edges appear
-        num_edges = len(self._tf_buffer.buffers)
-        if num_edges != getattr(self, "_tf_num_edges", 0):
-            self._tf_num_edges = num_edges
-            children_of: dict[str, list[str]] = {}
-            all_children: set[str] = set()
-            for parent, child in self._tf_buffer.buffers:
-                children_of.setdefault(parent, []).append(child)
-                all_children.add(child)
-            self._tf_children = children_of
-            self._tf_roots = [f for f in children_of if f not in all_children]
-
-        roots = self._tf_roots
-
-        # DFS walk with cycle protection
         visited: set[str] = set()
 
         def _walk(frame: str, entity_path: str) -> None:
             if frame in visited:
                 return
             visited.add(frame)
-            for child in self._tf_children.get(frame, []):
-                if child in visited:
-                    continue
+            for child in children.get(frame, []):
                 child_path = f"{entity_path}/{child}"
-                # mypy can't see the assert at method entry narrowing self._tf_buffer
-                transform = self._tf_buffer.get_transform(frame, child)  # type: ignore[union-attr]
+                transform = tf.get_transform(frame, child)
                 if transform is not None:
                     rr.log(
                         child_path,
