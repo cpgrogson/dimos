@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import Any
 
 from dimos.core.blueprints import autoconnect
+from dimos.core.global_config import global_config
 from dimos.navigation.smartnav.blueprints._rerun_helpers import (
     global_map_override,
     goal_path_override,
@@ -47,7 +48,6 @@ from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import 
 from dimos.navigation.smartnav.modules.terrain_map_ext.terrain_map_ext import TerrainMapExt
 from dimos.navigation.smartnav.modules.unity_bridge.unity_bridge import UnityBridgeModule
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
-from dimos.core.global_config import global_config
 from dimos.visualization.vis_module import vis_module
 
 

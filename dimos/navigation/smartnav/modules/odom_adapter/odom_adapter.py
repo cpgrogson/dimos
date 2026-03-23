@@ -72,5 +72,3 @@ class OdomAdapter(Module[ModuleConfig]):
             ],
         )
         self.odom._transport.publish(ps)
-
-

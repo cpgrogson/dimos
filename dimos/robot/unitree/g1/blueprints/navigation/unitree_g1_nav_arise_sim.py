@@ -94,56 +94,69 @@ _vis = vis_module(
     },
 )
 
-unitree_g1_nav_arise_sim = autoconnect(
-    # Simulator — provides ground-truth registered_scan and odometry
-    UnityBridgeModule.blueprint(
-        unity_binary="",
-        unity_scene="home_building_1",
-        vehicle_height=1.24,
-    ),
-    # Adapter: transforms scan to body-frame + synthesizes IMU from odom
-    AriseSimAdapter.blueprint(),
-    # SLAM — estimates pose from body-frame lidar + synthetic IMU
-    AriseSLAM.blueprint(use_imu=True),
-    # Nav stack — uses SLAM's odometry + registered_scan (NOT Unity's)
-    TerrainAnalysis.blueprint(
-        extra_args=["--obstacleHeightThre", "0.2", "--maxRelZ", "1.5"]
-    ),
-    TerrainMapExt.blueprint(),
-    LocalPlanner.blueprint(
-        extra_args=[
-            "--autonomyMode", "true",
-            "--maxSpeed", "2.0",
-            "--autonomySpeed", "2.0",
-            "--obstacleHeightThre", "0.2",
-            "--maxRelZ", "1.5",
-            "--minRelZ", "-1.0",
+unitree_g1_nav_arise_sim = (
+    autoconnect(
+        # Simulator — provides ground-truth registered_scan and odometry
+        UnityBridgeModule.blueprint(
+            unity_binary="",
+            unity_scene="home_building_1",
+            vehicle_height=1.24,
+        ),
+        # Adapter: transforms scan to body-frame + synthesizes IMU from odom
+        AriseSimAdapter.blueprint(),
+        # SLAM — estimates pose from body-frame lidar + synthetic IMU
+        AriseSLAM.blueprint(use_imu=True),
+        # Nav stack — uses SLAM's odometry + registered_scan (NOT Unity's)
+        TerrainAnalysis.blueprint(extra_args=["--obstacleHeightThre", "0.2", "--maxRelZ", "1.5"]),
+        TerrainMapExt.blueprint(),
+        LocalPlanner.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+                "--minRelZ",
+                "-1.0",
+            ]
+        ),
+        PathFollower.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--maxAccel",
+                "4.0",
+                "--slowDwnDisThre",
+                "0.2",
+            ]
+        ),
+        ClickToGoal.blueprint(),
+        CmdVelMux.blueprint(),
+        _vis,
+    )
+    .remappings(
+        [
+            (PathFollower, "cmd_vel", "nav_cmd_vel"),
+            (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
+            # Rename Unity's outputs so they don't collide with AriseSLAM's.
+            # The adapter reads sim_* and AriseSLAM outputs the canonical names.
+            (UnityBridgeModule, "registered_scan", "sim_registered_scan"),
+            (UnityBridgeModule, "odometry", "sim_odometry"),
+            (AriseSimAdapter, "registered_scan", "sim_registered_scan"),
+            (AriseSimAdapter, "odometry", "sim_odometry"),
         ]
-    ),
-    PathFollower.blueprint(
-        extra_args=[
-            "--autonomyMode", "true",
-            "--maxSpeed", "2.0",
-            "--autonomySpeed", "2.0",
-            "--maxAccel", "4.0",
-            "--slowDwnDisThre", "0.2",
-        ]
-    ),
-    ClickToGoal.blueprint(),
-    CmdVelMux.blueprint(),
-    _vis,
-).remappings(
-    [
-        (PathFollower, "cmd_vel", "nav_cmd_vel"),
-        (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
-        # Rename Unity's outputs so they don't collide with AriseSLAM's.
-        # The adapter reads sim_* and AriseSLAM outputs the canonical names.
-        (UnityBridgeModule, "registered_scan", "sim_registered_scan"),
-        (UnityBridgeModule, "odometry", "sim_odometry"),
-        (AriseSimAdapter, "registered_scan", "sim_registered_scan"),
-        (AriseSimAdapter, "odometry", "sim_odometry"),
-    ]
-).global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+    )
+    .global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+)
 
 
 def main() -> None:

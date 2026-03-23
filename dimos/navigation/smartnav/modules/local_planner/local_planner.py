@@ -29,8 +29,8 @@ from dimos.msgs.geometry_msgs.Twist import Twist
 from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.nav_msgs.Path import Path
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
-from dimos.utils.data import get_data
 from dimos.utils.change_detect import Glob, PathEntry
+from dimos.utils.data import get_data
 
 
 def _default_paths_dir() -> str:

@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import Any
 
 from dimos.core.blueprints import autoconnect
+from dimos.core.global_config import global_config
 from dimos.navigation.smartnav.blueprints._rerun_helpers import (
     goal_path_override,
     path_override,
@@ -45,7 +46,6 @@ from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_genera
 from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import TerrainAnalysis
 from dimos.navigation.smartnav.modules.terrain_map_ext.terrain_map_ext import TerrainMapExt
 from dimos.navigation.smartnav.modules.unity_bridge.unity_bridge import UnityBridgeModule
-from dimos.core.global_config import global_config
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.visualization.vis_module import vis_module
 
@@ -85,63 +85,67 @@ _vis = vis_module(
     },
 )
 
-unitree_g1_nav_basic_sim = autoconnect(
-    UnityBridgeModule.blueprint(
-        unity_binary="",
-        unity_scene="home_building_1",
-        vehicle_height=1.24,
-    ),
-    SensorScanGeneration.blueprint(),
-    TerrainAnalysis.blueprint(
-        extra_args=[
-            "--obstacleHeightThre",
-            "0.2",
-            "--maxRelZ",
-            "1.5",
+unitree_g1_nav_basic_sim = (
+    autoconnect(
+        UnityBridgeModule.blueprint(
+            unity_binary="",
+            unity_scene="home_building_1",
+            vehicle_height=1.24,
+        ),
+        SensorScanGeneration.blueprint(),
+        TerrainAnalysis.blueprint(
+            extra_args=[
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+            ]
+        ),
+        TerrainMapExt.blueprint(),
+        LocalPlanner.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+                "--minRelZ",
+                "-1.0",
+            ]
+        ),
+        PathFollower.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--maxAccel",
+                "4.0",
+                "--slowDwnDisThre",
+                "0.2",
+            ]
+        ),
+        ClickToGoal.blueprint(),
+        CmdVelMux.blueprint(),
+        _vis,
+    )
+    .remappings(
+        [
+            # PathFollower cmd_vel → CmdVelMux nav input (avoid name collision with mux output)
+            (PathFollower, "cmd_vel", "nav_cmd_vel"),
+            # Unity needs the extended (persistent) terrain map for Z-height, not the local one
+            (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
         ]
-    ),
-    TerrainMapExt.blueprint(),
-    LocalPlanner.blueprint(
-        extra_args=[
-            "--autonomyMode",
-            "true",
-            "--maxSpeed",
-            "2.0",
-            "--autonomySpeed",
-            "2.0",
-            "--obstacleHeightThre",
-            "0.2",
-            "--maxRelZ",
-            "1.5",
-            "--minRelZ",
-            "-1.0",
-        ]
-    ),
-    PathFollower.blueprint(
-        extra_args=[
-            "--autonomyMode",
-            "true",
-            "--maxSpeed",
-            "2.0",
-            "--autonomySpeed",
-            "2.0",
-            "--maxAccel",
-            "4.0",
-            "--slowDwnDisThre",
-            "0.2",
-        ]
-    ),
-    ClickToGoal.blueprint(),
-    CmdVelMux.blueprint(),
-    _vis,
-).remappings(
-    [
-        # PathFollower cmd_vel → CmdVelMux nav input (avoid name collision with mux output)
-        (PathFollower, "cmd_vel", "nav_cmd_vel"),
-        # Unity needs the extended (persistent) terrain map for Z-height, not the local one
-        (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
-    ]
-).global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+    )
+    .global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+)
 
 
 def main() -> None:

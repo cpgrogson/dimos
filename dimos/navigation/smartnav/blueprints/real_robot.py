@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from dimos.core.blueprints import autoconnect
+from dimos.core.global_config import global_config
 from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2
 from dimos.navigation.smartnav.modules.local_planner.local_planner import LocalPlanner
 from dimos.navigation.smartnav.modules.path_follower.path_follower import PathFollower
@@ -35,7 +36,6 @@ from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_genera
 from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import TerrainAnalysis
 from dimos.navigation.smartnav.modules.tui_control.tui_control import TUIControlModule
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
-from dimos.core.global_config import global_config
 from dimos.visualization.vis_module import vis_module
 
 

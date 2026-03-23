@@ -31,8 +31,8 @@ from dimos.core.blueprints import autoconnect
 from dimos.core.global_config import global_config
 from dimos.mapping.costmapper import CostMapper
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
-from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.nav_msgs.OccupancyGrid import OccupancyGrid
+from dimos.msgs.nav_msgs.Odometry import Odometry
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 from dimos.navigation.smartnav.modules.odom_adapter.odom_adapter import OdomAdapter
 from dimos.navigation.smartnav.modules.pgo.pgo import PGO
@@ -58,18 +58,24 @@ def smartnav_coordinator():
     # Minimal pipeline: GO2Connection → OdomAdapter → PGO → CostMapper
     # Skip ReplanningAStarPlanner and WavefrontFrontierExplorer to avoid
     # needing a goal and cmd_vel sink.
-    bp = autoconnect(
-        unitree_go2_basic,
-        PGO.blueprint(),
-        OdomAdapter.blueprint(),
-        CostMapper.blueprint(),
-    ).global_config(
-        n_workers=1,
-        robot_model="unitree_go2",
-    ).remappings([
-        (GO2Connection, "lidar", "registered_scan"),
-        (GO2Connection, "odom", "raw_odom"),
-    ])
+    bp = (
+        autoconnect(
+            unitree_go2_basic,
+            PGO.blueprint(),
+            OdomAdapter.blueprint(),
+            CostMapper.blueprint(),
+        )
+        .global_config(
+            n_workers=1,
+            robot_model="unitree_go2",
+        )
+        .remappings(
+            [
+                (GO2Connection, "lidar", "registered_scan"),
+                (GO2Connection, "odom", "raw_odom"),
+            ]
+        )
+    )
 
     coord = bp.build()
     yield coord

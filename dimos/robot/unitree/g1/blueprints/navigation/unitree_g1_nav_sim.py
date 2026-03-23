@@ -56,8 +56,8 @@ from dimos.navigation.smartnav.modules.click_to_goal.click_to_goal import ClickT
 from dimos.navigation.smartnav.modules.cmd_vel_mux import CmdVelMux
 from dimos.navigation.smartnav.modules.far_planner.far_planner import FarPlanner
 from dimos.navigation.smartnav.modules.local_planner.local_planner import LocalPlanner
-from dimos.navigation.smartnav.modules.pgo.pgo import PGO
 from dimos.navigation.smartnav.modules.path_follower.path_follower import PathFollower
+from dimos.navigation.smartnav.modules.pgo.pgo import PGO
 from dimos.navigation.smartnav.modules.sensor_scan_generation.sensor_scan_generation import (
     SensorScanGeneration,
 )
@@ -103,76 +103,80 @@ _vis = vis_module(
     },
 )
 
-unitree_g1_nav_sim = autoconnect(
-    UnityBridgeModule.blueprint(
-        unity_binary="",
-        unity_scene="home_building_1",
-        vehicle_height=1.24,
-    ),
-    SensorScanGeneration.blueprint(),
-    TerrainAnalysis.blueprint(
-        extra_args=[
-            "--obstacleHeightThre",
-            "0.2",
-            "--maxRelZ",
-            "1.5",
+unitree_g1_nav_sim = (
+    autoconnect(
+        UnityBridgeModule.blueprint(
+            unity_binary="",
+            unity_scene="home_building_1",
+            vehicle_height=1.24,
+        ),
+        SensorScanGeneration.blueprint(),
+        TerrainAnalysis.blueprint(
+            extra_args=[
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+            ]
+        ),
+        TerrainMapExt.blueprint(),
+        FarPlanner.blueprint(
+            sensor_range=30.0,
+            visibility_range=25.0,
+        ),
+        LocalPlanner.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+                "--minRelZ",
+                "-1.0",
+            ]
+        ),
+        PathFollower.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--maxAccel",
+                "4.0",
+                "--slowDwnDisThre",
+                "0.2",
+            ]
+        ),
+        PGO.blueprint(),
+        ClickToGoal.blueprint(),
+        CmdVelMux.blueprint(),
+        _vis,
+    )
+    .remappings(
+        [
+            # PathFollower cmd_vel → CmdVelMux nav input (avoid name collision with mux output)
+            (PathFollower, "cmd_vel", "nav_cmd_vel"),
+            # Unity needs the extended (persistent) terrain map for Z-height, not the local one
+            (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
+            # Global-scale planners use PGO-corrected odometry (per CMU ICRA 2022):
+            # "Loop closure adjustments are used by the high-level planners since
+            # they are in charge of planning at the global scale. Modules such as
+            # local planner and terrain analysis only care about the local
+            # environment surrounding the vehicle and work in the odometry frame."
+            (FarPlanner, "odometry", "corrected_odometry"),
+            (ClickToGoal, "odometry", "corrected_odometry"),
+            (TerrainAnalysis, "odometry", "corrected_odometry"),
         ]
-    ),
-    TerrainMapExt.blueprint(),
-    FarPlanner.blueprint(
-        sensor_range=30.0,
-        visibility_range=25.0,
-    ),
-    LocalPlanner.blueprint(
-        extra_args=[
-            "--autonomyMode",
-            "true",
-            "--maxSpeed",
-            "2.0",
-            "--autonomySpeed",
-            "2.0",
-            "--obstacleHeightThre",
-            "0.2",
-            "--maxRelZ",
-            "1.5",
-            "--minRelZ",
-            "-1.0",
-        ]
-    ),
-    PathFollower.blueprint(
-        extra_args=[
-            "--autonomyMode",
-            "true",
-            "--maxSpeed",
-            "2.0",
-            "--autonomySpeed",
-            "2.0",
-            "--maxAccel",
-            "4.0",
-            "--slowDwnDisThre",
-            "0.2",
-        ]
-    ),
-    PGO.blueprint(),
-    ClickToGoal.blueprint(),
-    CmdVelMux.blueprint(),
-    _vis,
-).remappings(
-    [
-        # PathFollower cmd_vel → CmdVelMux nav input (avoid name collision with mux output)
-        (PathFollower, "cmd_vel", "nav_cmd_vel"),
-        # Unity needs the extended (persistent) terrain map for Z-height, not the local one
-        (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
-        # Global-scale planners use PGO-corrected odometry (per CMU ICRA 2022):
-        # "Loop closure adjustments are used by the high-level planners since
-        # they are in charge of planning at the global scale. Modules such as
-        # local planner and terrain analysis only care about the local
-        # environment surrounding the vehicle and work in the odometry frame."
-        (FarPlanner, "odometry", "corrected_odometry"),
-        (ClickToGoal, "odometry", "corrected_odometry"),
-        (TerrainAnalysis, "odometry", "corrected_odometry"),
-    ]
-).global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+    )
+    .global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+)
 
 
 def main() -> None:

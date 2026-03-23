@@ -191,7 +191,6 @@ def did_change(
         )
         return False
 
-
     current_hash = _hash_files(files)
 
     cache_dir = _get_cache_dir()
