@@ -496,7 +496,12 @@ class UnityBridgeModule(Module[UnityBridgeConfig]):
         dy = points[:, 1] - self._y
         near = points[np.sqrt(dx * dx + dy * dy) < 0.5]
         if len(near) >= 10:
-            self._terrain_z = 0.8 * self._terrain_z + 0.2 * near[:, 2].mean()
+            # Use a low percentile instead of mean so the robot tracks the
+            # ground floor, not elevated surfaces (tables, shelves).  The 10th
+            # percentile is robust to outlier floor-noise while still picking
+            # the lowest nearby surface.
+            ground_z = float(np.percentile(near[:, 2], 10))
+            self._terrain_z = 0.8 * self._terrain_z + 0.2 * ground_z
 
     # ---- Unity TCP bridge -------------------------------------------------
 
