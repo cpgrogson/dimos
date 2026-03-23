@@ -1,3 +1,17 @@
+# Copyright 2026 Dimensional Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """AriseSimAdapter: adapts Unity sim data for AriseSLAM input.
 
 AriseSLAM expects body-frame lidar (raw_points) and IMU data.
@@ -127,13 +141,15 @@ class AriseSimAdapter(Module[AriseSimAdapterConfig]):
                 # Rotate gravity [0, 0, g] into body frame
                 gx, gy, gz = _rotate_vec_by_quat_inv(0.0, 0.0, g, q.x, q.y, q.z, q.w)
 
-                self.imu._transport.publish(Imu(
-                    angular_velocity=ang_vel,
-                    linear_acceleration=Vector3(gx, gy, gz),
-                    orientation=Quaternion(q.x, q.y, q.z, q.w),
-                    ts=time.time(),
-                    frame_id="sensor",
-                ))
+                self.imu._transport.publish(
+                    Imu(
+                        angular_velocity=ang_vel,
+                        linear_acceleration=Vector3(gx, gy, gz),
+                        orientation=Quaternion(q.x, q.y, q.z, q.w),
+                        ts=time.time(),
+                        frame_id="sensor",
+                    )
+                )
 
             elapsed = time.monotonic() - t0
             if dt - elapsed > 0:
@@ -141,8 +157,13 @@ class AriseSimAdapter(Module[AriseSimAdapterConfig]):
 
 
 def _rotate_vec_by_quat_inv(
-    vx: float, vy: float, vz: float,
-    qx: float, qy: float, qz: float, qw: float,
+    vx: float,
+    vy: float,
+    vz: float,
+    qx: float,
+    qy: float,
+    qz: float,
+    qw: float,
 ) -> tuple[float, float, float]:
     """Rotate vector by the inverse of a unit quaternion."""
     nqx, nqy, nqz = -qx, -qy, -qz

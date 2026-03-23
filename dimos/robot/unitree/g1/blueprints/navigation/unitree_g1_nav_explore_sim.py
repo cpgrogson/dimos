@@ -91,67 +91,71 @@ _vis = vis_module(
     },
 )
 
-unitree_g1_nav_explore_sim = autoconnect(
-    UnityBridgeModule.blueprint(
-        unity_binary="",
-        unity_scene="home_building_1",
-        vehicle_height=1.24,
-    ),
-    SensorScanGeneration.blueprint(),
-    TerrainAnalysis.blueprint(
-        extra_args=[
-            "--obstacleHeightThre",
-            "0.2",
-            "--maxRelZ",
-            "1.5",
+unitree_g1_nav_explore_sim = (
+    autoconnect(
+        UnityBridgeModule.blueprint(
+            unity_binary="",
+            unity_scene="home_building_1",
+            vehicle_height=1.24,
+        ),
+        SensorScanGeneration.blueprint(),
+        TerrainAnalysis.blueprint(
+            extra_args=[
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+            ]
+        ),
+        TerrainMapExt.blueprint(),
+        TarePlanner.blueprint(
+            sensor_range=30.0,
+        ),
+        LocalPlanner.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+                "--minRelZ",
+                "-1.0",
+            ]
+        ),
+        PathFollower.blueprint(
+            extra_args=[
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "2.0",
+                "--autonomySpeed",
+                "2.0",
+                "--maxAccel",
+                "4.0",
+                "--slowDwnDisThre",
+                "0.2",
+            ]
+        ),
+        PGO.blueprint(),
+        CmdVelMux.blueprint(),
+        _vis,
+    )
+    .remappings(
+        [
+            (PathFollower, "cmd_vel", "nav_cmd_vel"),
+            (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
+            # TARE plans at global scale — needs PGO-corrected odometry
+            (TarePlanner, "odometry", "corrected_odometry"),
+            (TerrainAnalysis, "odometry", "corrected_odometry"),
         ]
-    ),
-    TerrainMapExt.blueprint(),
-    TarePlanner.blueprint(
-        sensor_range=30.0,
-    ),
-    LocalPlanner.blueprint(
-        extra_args=[
-            "--autonomyMode",
-            "true",
-            "--maxSpeed",
-            "2.0",
-            "--autonomySpeed",
-            "2.0",
-            "--obstacleHeightThre",
-            "0.2",
-            "--maxRelZ",
-            "1.5",
-            "--minRelZ",
-            "-1.0",
-        ]
-    ),
-    PathFollower.blueprint(
-        extra_args=[
-            "--autonomyMode",
-            "true",
-            "--maxSpeed",
-            "2.0",
-            "--autonomySpeed",
-            "2.0",
-            "--maxAccel",
-            "4.0",
-            "--slowDwnDisThre",
-            "0.2",
-        ]
-    ),
-    PGO.blueprint(),
-    CmdVelMux.blueprint(),
-    _vis,
-).remappings(
-    [
-        (PathFollower, "cmd_vel", "nav_cmd_vel"),
-        (UnityBridgeModule, "terrain_map", "terrain_map_ext"),
-        # TARE plans at global scale — needs PGO-corrected odometry
-        (TarePlanner, "odometry", "corrected_odometry"),
-        (TerrainAnalysis, "odometry", "corrected_odometry"),
-    ]
-).global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+    )
+    .global_config(n_workers=8, robot_model="unitree_g1", simulation=True)
+)
 
 
 def main() -> None:

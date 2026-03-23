@@ -47,8 +47,8 @@ from dimos.navigation.smartnav.modules.terrain_analysis.terrain_analysis import 
 from dimos.navigation.smartnav.modules.terrain_map_ext.terrain_map_ext import TerrainMapExt
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.robot.unitree.go2.connection import GO2Connection
-from dimos.visualization.vis_module import vis_module
 from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
+from dimos.visualization.vis_module import vis_module
 
 
 def _convert_camera_info(camera_info: Any) -> Any:
@@ -116,27 +116,36 @@ unitree_go2_smartnav = (
         SensorScanGeneration.blueprint(),
         OdomAdapter.blueprint(),
         PGO.blueprint(),
-        TerrainAnalysis.blueprint(
-            extra_args=["--obstacleHeightThre", "0.2", "--maxRelZ", "1.5"]
-        ),
+        TerrainAnalysis.blueprint(extra_args=["--obstacleHeightThre", "0.2", "--maxRelZ", "1.5"]),
         TerrainMapExt.blueprint(),
         LocalPlanner.blueprint(
             extra_args=[
-                "--autonomyMode", "true",
-                "--maxSpeed", "1.0",
-                "--autonomySpeed", "1.0",
-                "--obstacleHeightThre", "0.2",
-                "--maxRelZ", "1.5",
-                "--minRelZ", "-0.5",
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "1.0",
+                "--autonomySpeed",
+                "1.0",
+                "--obstacleHeightThre",
+                "0.2",
+                "--maxRelZ",
+                "1.5",
+                "--minRelZ",
+                "-0.5",
             ]
         ),
         PathFollower.blueprint(
             extra_args=[
-                "--autonomyMode", "true",
-                "--maxSpeed", "1.0",
-                "--autonomySpeed", "1.0",
-                "--maxAccel", "2.0",
-                "--slowDwnDisThre", "0.2",
+                "--autonomyMode",
+                "true",
+                "--maxSpeed",
+                "1.0",
+                "--autonomySpeed",
+                "1.0",
+                "--maxAccel",
+                "2.0",
+                "--slowDwnDisThre",
+                "0.2",
             ]
         ),
         ClickToGoal.blueprint(),

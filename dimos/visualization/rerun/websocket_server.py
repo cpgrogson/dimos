@@ -193,5 +193,3 @@ class RerunWebSocketServer(Module[Config]):
 
         else:
             logger.warning(f"RerunWebSocketServer: unknown message type {msg_type!r}")
-
-
