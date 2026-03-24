@@ -355,8 +355,3 @@ class ObjectSceneRegistrationModule(Module):
         aggregated_pc = aggregate_pointclouds(objects_for_pc)
         self.pointcloud.publish(aggregated_pc)
         return
-
-
-object_scene_registration_module = ObjectSceneRegistrationModule.blueprint
-
-__all__ = ["ObjectSceneRegistrationModule", "object_scene_registration_module"]

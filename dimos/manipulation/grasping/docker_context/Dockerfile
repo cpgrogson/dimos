@@ -27,7 +27,7 @@ RUN conda init bash && \
 
 # Clone GraspGen repository (pin to a known-good commit for reproducibility)
 WORKDIR /app
-RUN git clone https://github.com/NVlabs/GraspGen.git && cd GraspGen && git checkout main
+RUN git clone https://github.com/NVlabs/GraspGen.git && cd GraspGen && git checkout 0c8066e478ece8920a8b624dc2d0544a07ed9f10
 
 # Install PyTorch with CUDA 12.8
 RUN conda run -n app pip install --no-cache-dir \

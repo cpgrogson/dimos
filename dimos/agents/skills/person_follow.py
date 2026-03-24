@@ -22,7 +22,7 @@ import numpy as np
 from reactivex.disposable import Disposable
 from turbojpeg import TurboJPEG
 
-from dimos.agents.agent import AgentSpec
+from dimos.agents.agent_spec import AgentSpec
 from dimos.agents.annotation import skill
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
@@ -311,8 +311,3 @@ class PersonFollowSkillContainer(Module[Config]):
 def _decode_base64_image(b64: str) -> Image:
     bgr_array = TurboJPEG().decode(base64.b64decode(b64))
     return Image(data=bgr_array, format=ImageFormat.BGR)
-
-
-person_follow_skill = PersonFollowSkillContainer.blueprint
-
-__all__ = ["PersonFollowSkillContainer", "person_follow_skill"]

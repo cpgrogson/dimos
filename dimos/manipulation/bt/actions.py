@@ -212,8 +212,11 @@ class GenerateGrasps(ManipulationAction):
         self._thread: threading.Thread | None = None
         self._result: Any = None
         self._error: Exception | None = None
+        self._run_id: object = object()
 
     def initialise(self) -> None:
+        self._run_id = object()  # fresh token each run
+        current_id = self._run_id
         self._result = None
         self._error = None
         obj_pc = self.bb.object_pointcloud
@@ -221,11 +224,14 @@ class GenerateGrasps(ManipulationAction):
 
         def _run() -> None:
             try:
-                self._result = self.module.get_rpc_calls("BTManipulationModule.generate_grasps")(
+                result = self.module.get_rpc_calls("BTManipulationModule.generate_grasps")(
                     obj_pc, scene_pc, rpc_timeout=self.rpc_timeout
                 )
+                if current_id is self._run_id:
+                    self._result = result
             except Exception as e:
-                self._error = e
+                if current_id is self._run_id:
+                    self._error = e
 
         self._thread = threading.Thread(target=_run, daemon=True, name="GenerateGrasps-RPC")
         self._thread.start()
