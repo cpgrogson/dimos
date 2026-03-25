@@ -178,9 +178,6 @@ class DockerModule(ModuleProxyProtocol):
     config: DockerModuleConfig
 
     def __init__(self, module_class: type[Module], *args: Any, **kwargs: Any) -> None:
-        # g (GlobalConfig) is passed by deploy pipeline but isn't a config field
-        kwargs.pop("g", None)
-
         config_class = getattr(module_class, "default_config", DockerModuleConfig)
         if not issubclass(config_class, DockerModuleConfig):
             raise TypeError(
