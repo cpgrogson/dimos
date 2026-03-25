@@ -30,7 +30,7 @@ from dimos.utils.safe_thread_map import ExceptionGroup
 class TestDockerWorkerManagerPartialFailure:
     """DockerWorkerManager.deploy_parallel must stop successful containers when one fails."""
 
-    @patch("dimos.core.docker_runner.DockerModuleOuter")
+    @patch("dimos.core.docker_module.DockerModuleOuter")
     def test_middle_module_fails_stops_siblings(self, mock_docker_module_cls):
         """Deploy 3 modules where the middle one fails. The other two must be stopped."""
         from dimos.core.docker_worker_manager import DockerWorkerManager
@@ -69,7 +69,7 @@ class TestDockerWorkerManagerPartialFailure:
         mod_a.stop.assert_called_once()
         mod_c.stop.assert_called_once()
 
-    @patch("dimos.core.docker_runner.DockerModuleOuter")
+    @patch("dimos.core.docker_module.DockerModuleOuter")
     def test_multiple_failures_raises_exception_group(self, mock_docker_module_cls):
         """Deploy 3 modules where two fail. Should raise ExceptionGroup with both errors."""
         from dimos.core.docker_worker_manager import DockerWorkerManager
@@ -110,7 +110,7 @@ class TestDockerWorkerManagerPartialFailure:
         # The one successful module must have been stopped
         mod_a.stop.assert_called_once()
 
-    @patch("dimos.core.docker_runner.DockerModuleOuter")
+    @patch("dimos.core.docker_module.DockerModuleOuter")
     def test_all_succeed_no_stops(self, mock_docker_module_cls):
         """When all deployments succeed, no modules should be stopped."""
         from dimos.core.docker_worker_manager import DockerWorkerManager
@@ -138,7 +138,7 @@ class TestDockerWorkerManagerPartialFailure:
         for m in mocks:
             m.stop.assert_not_called()
 
-    @patch("dimos.core.docker_runner.DockerModuleOuter")
+    @patch("dimos.core.docker_module.DockerModuleOuter")
     def test_stop_failure_does_not_mask_deploy_error(self, mock_docker_module_cls):
         """If stop() itself raises during cleanup, the original deploy error still propagates."""
         from dimos.core.docker_worker_manager import DockerWorkerManager

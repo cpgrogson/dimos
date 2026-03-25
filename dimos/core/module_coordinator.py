@@ -124,8 +124,8 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         global_config: GlobalConfig = global_config,
         **kwargs: Any,
     ) -> ModuleProxy:
-        # Inline to avoid circular import: module_coordinator → docker_runner → module → blueprints → module_coordinator
-        from dimos.core.docker_runner import DockerModuleOuter, is_docker_module
+        # Inline to avoid circular import: module_coordinator → docker_module → module → blueprints → module_coordinator
+        from dimos.core.docker_module import DockerModuleOuter, is_docker_module
 
         if not self._client:
             raise ValueError("Trying to dimos.deploy before the client has started")
@@ -139,8 +139,8 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         return deployed_module  # type: ignore[return-value]
 
     def deploy_parallel(self, module_specs: list[ModuleSpec]) -> list[ModuleProxy]:
-        # Inline to avoid circular import: module_coordinator → docker_runner → module → blueprints → module_coordinator
-        from dimos.core.docker_runner import is_docker_module
+        # Inline to avoid circular import: module_coordinator → docker_module → module → blueprints → module_coordinator
+        from dimos.core.docker_module import is_docker_module
 
         if not self._client:
             raise ValueError("Not started")

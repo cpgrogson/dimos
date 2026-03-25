@@ -20,7 +20,7 @@ from dimos.core.module import ModuleSpec
 from dimos.utils.safe_thread_map import ExceptionGroup, safe_thread_map
 
 if TYPE_CHECKING:
-    from dimos.core.docker_runner import DockerModuleOuter
+    from dimos.core.docker_module import DockerModuleOuter
 
 
 class DockerWorkerManager:
@@ -35,7 +35,7 @@ class DockerWorkerManager:
         If any deployment fails, all successfully-started containers are
         stopped before an ExceptionGroup is raised.
         """
-        from dimos.core.docker_runner import DockerModuleOuter
+        from dimos.core.docker_module import DockerModuleOuter
 
         def _on_errors(
             _outcomes: list[Any], successes: list[DockerModuleOuter], errors: list[Exception]

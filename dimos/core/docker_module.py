@@ -630,7 +630,7 @@ class DockerModuleOuter(ModuleProxyProtocol):
         # Filter out docker-specific kwargs (paths, etc.) - only pass module config
         kwargs = {"config": _extract_module_config(cfg)}
         payload = {"module_path": module_path, "args": list(self._args), "kwargs": kwargs}
-        # DimOS base image entrypoint already runs "dimos.core.docker_runner run"
+        # DimOS base image entrypoint already runs "dimos.core.docker_module run"
         try:
             payload_json = json.dumps(payload, separators=(",", ":"))
         except TypeError as e:
@@ -734,7 +734,7 @@ def _cli_run(payload_json: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="dimos.core.docker_runner")
+    parser = argparse.ArgumentParser(prog="dimos.core.docker_module")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     runp = sub.add_parser("run", help="Run a module inside a container")

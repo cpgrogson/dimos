@@ -27,7 +27,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from dimos.core.docker_runner import DockerModuleOuter, DockerModuleConfig, is_docker_module
+from dimos.core.docker_module import DockerModuleOuter, DockerModuleConfig, is_docker_module
 from dimos.core.global_config import global_config
 from dimos.core.module import Module
 from dimos.core.module_coordinator import ModuleCoordinator
@@ -76,7 +76,7 @@ class TestIsDockerModule:
 
 
 class TestModuleCoordinatorDockerRouting:
-    @patch("dimos.core.docker_runner.DockerModuleOuter")
+    @patch("dimos.core.docker_module.DockerModuleOuter")
     @patch("dimos.core.module_coordinator.WorkerManager")
     def test_deploy_routes_docker_module(self, mock_worker_manager_cls, mock_docker_module_cls):
         mock_worker_mgr = MagicMock()
@@ -101,7 +101,7 @@ class TestModuleCoordinatorDockerRouting:
         finally:
             coordinator.stop()
 
-    @patch("dimos.core.docker_runner.DockerModuleOuter")
+    @patch("dimos.core.docker_module.DockerModuleOuter")
     @patch("dimos.core.module_coordinator.WorkerManager")
     def test_deploy_docker_propagates_constructor_failure(
         self, mock_worker_manager_cls, mock_docker_module_cls
@@ -173,7 +173,7 @@ class TestModuleCoordinatorDockerRouting:
         finally:
             coordinator.stop()
 
-    @patch("dimos.core.docker_runner.DockerModuleOuter")
+    @patch("dimos.core.docker_module.DockerModuleOuter")
     @patch("dimos.core.module_coordinator.WorkerManager")
     def test_stop_cleans_up_docker_modules(self, mock_worker_manager_cls, mock_docker_module_cls):
         mock_worker_mgr = MagicMock()
@@ -255,8 +255,8 @@ class TestDockerModuleOuterCleanupReconnect:
             # reconnect mode: should NOT stop/rm the container
             dm.config = FakeDockerConfig(docker_reconnect_container=True)
             with (
-                patch("dimos.core.docker_runner._run") as mock_run,
-                patch("dimos.core.docker_runner._remove_container") as mock_rm,
+                patch("dimos.core.docker_module._run") as mock_run,
+                patch("dimos.core.docker_module._remove_container") as mock_rm,
             ):
                 dm._cleanup()
                 mock_run.assert_not_called()
@@ -275,8 +275,8 @@ class TestDockerModuleOuterCleanupReconnect:
             # normal mode: should stop and rm the container
             dm.config = FakeDockerConfig(docker_reconnect_container=False)
             with (
-                patch("dimos.core.docker_runner._run") as mock_run,
-                patch("dimos.core.docker_runner._remove_container") as mock_rm,
+                patch("dimos.core.docker_module._run") as mock_run,
+                patch("dimos.core.docker_module._remove_container") as mock_rm,
             ):
                 dm._cleanup()
                 mock_run.assert_called_once()  # docker stop
