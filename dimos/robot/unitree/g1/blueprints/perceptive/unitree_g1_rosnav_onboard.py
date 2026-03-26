@@ -32,7 +32,6 @@ unitree_g1_rosnav_onboard = (
         _vis,
         _mapper,
         G1HighLevelDdsSdk.blueprint(),
-        # ReplanningAStarPlanner.blueprint(),
         ROSNav.blueprint(
             mode="hardware",
             vehicle_height=1.24,
