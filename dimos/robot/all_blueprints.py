@@ -87,6 +87,7 @@ all_blueprints = {
     "unitree-go2-spatial": "dimos.robot.unitree.go2.blueprints.smart.unitree_go2_spatial:unitree_go2_spatial",
     "unitree-go2-temporal-memory": "dimos.robot.unitree.go2.blueprints.agentic.unitree_go2_temporal_memory:unitree_go2_temporal_memory",
     "unitree-go2-vlm-stream-test": "dimos.robot.unitree.go2.blueprints.smart.unitree_go2_vlm_stream_test:unitree_go2_vlm_stream_test",
+    "unitree-go2-nav-coordinator": "dimos.robot.unitree.go2.blueprints.smart.unitree_go2_nav_coordinator:unitree_go2_nav_coordinator",
     "unitree-go2-webrtc-keyboard-teleop": "dimos.robot.unitree.go2.blueprints.basic.unitree_go2_webrtc_keyboard_teleop:unitree_go2_webrtc_keyboard_teleop",
     "unity-sim": "dimos.simulation.unity.blueprint:unity_sim",
     "xarm-perception": "dimos.manipulation.blueprints:xarm_perception",
