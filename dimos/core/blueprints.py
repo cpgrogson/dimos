@@ -56,6 +56,36 @@ class ModuleRef:
 
 
 @dataclass(frozen=True)
+class StreamWiring:
+    """Compiled instruction: set a transport on a module's stream."""
+
+    module_class: type[ModuleBase]
+    stream_name: str
+    transport: PubSubTransport[Any]
+
+
+@dataclass(frozen=True)
+class ModuleRefWiring:
+    """Compiled instruction: link base_module.ref_name → target_module."""
+
+    base_module: type[ModuleBase]
+    ref_name: str
+    target_module: type[ModuleBase]
+
+
+@dataclass(frozen=True)
+class RpcWiringPlan:
+    """Compiled RPC wiring: registry of methods + per-module binding requests."""
+
+    # rpc_key -> (module_class, method_name) — the full callable registry
+    registry: dict[str, tuple[type[ModuleBase], str]]
+    # (module_class, set_method_name, linked_rpc_key) — for set_X pattern
+    set_methods: tuple[tuple[type[ModuleBase], str, str], ...]
+    # (module_class, requested_name, rpc_key) — for rpc_calls pattern
+    rpc_call_bindings: tuple[tuple[type[ModuleBase], str, str], ...]
+
+
+@dataclass(frozen=True)
 class _BlueprintAtom:
     kwargs: dict[str, Any]
     module: type[ModuleBase[Any]]
@@ -166,7 +196,7 @@ class Blueprint:
     def _check_ambiguity(
         self,
         requested_method_name: str,
-        interface_methods: Mapping[str, list[tuple[type[ModuleBase], Callable[..., Any]]]],
+        interface_methods: Mapping[str, list[tuple[type[ModuleBase], str]]],
         requesting_module: type[ModuleBase],
     ) -> None:
         if (
@@ -189,17 +219,13 @@ class Blueprint:
 
         use_pickled = getattr(stream_type, "lcm_encode", None) is None
         topic = f"/{name}" if self._is_name_unique(name) else f"/{short_id()}"
-        transport = pLCMTransport(topic) if use_pickled else LCMTransport(topic, stream_type)
-
-        return transport
+        return pLCMTransport(topic) if use_pickled else LCMTransport(topic, stream_type)
 
     @cached_property
     def _all_name_types(self) -> set[tuple[str, type]]:
-        # Apply remappings to get the actual names that will be used
         result = set()
         for blueprint in self._active_blueprints:
             for conn in blueprint.streams:
-                # Check if this stream should be remapped
                 remapped_name = self.remapping_map.get((blueprint.module, conn.name), conn.name)
                 if isinstance(remapped_name, str):
                     result.add((remapped_name, conn.type))
@@ -274,65 +300,69 @@ class Blueprint:
 
         raise ValueError("\n".join(error_lines))
 
-    def _deploy_all_modules(
-        self, module_coordinator: ModuleCoordinator, global_config: GlobalConfig
-    ) -> None:
-        module_specs: list[ModuleSpec] = []
+    def _compile_module_specs(self, g: GlobalConfig) -> list[ModuleSpec]:
+        """Compile the list of module deployment specs (pure — no side effects)."""
+        specs: list[ModuleSpec] = []
         for blueprint in self._active_blueprints:
-            module_specs.append((blueprint.module, global_config, blueprint.kwargs))
+            specs.append((blueprint.module, g, blueprint.kwargs))
+        return specs
 
-        module_coordinator.deploy_parallel(module_specs)
-
-    def _connect_streams(self, module_coordinator: ModuleCoordinator) -> None:
-        # dict when given (final/remapped) stream name+type, provides a list of modules + original (non-remapped) stream names
-        streams = defaultdict(list)
+    def _compile_stream_wiring(self) -> list[StreamWiring]:
+        """Compile stream transport assignments (pure — no side effects)."""
+        # Group streams by (remapped_name, type) -> [(module_class, original_name)]
+        streams: dict[
+            tuple[str | type[ModuleBase] | type[Spec], type], list[tuple[type[ModuleBase], str]]
+        ] = defaultdict(list)
 
         for blueprint in self._active_blueprints:
             for conn in blueprint.streams:
-                # Check if this stream should be remapped
                 remapped_name = self.remapping_map.get((blueprint.module, conn.name), conn.name)
                 if isinstance(remapped_name, str):
-                    # Group by remapped name and type
                     streams[remapped_name, conn.type].append((blueprint.module, conn.name))
 
-        # Connect all In/Out streams by remapped name and type.
-        for remapped_name, stream_type in streams.keys():
+        wiring: list[StreamWiring] = []
+        for (remapped_name, stream_type), module_streams in streams.items():
+            assert isinstance(remapped_name, str)
             transport = self._get_transport_for(remapped_name, stream_type)
-            for module, original_name in streams[(remapped_name, stream_type)]:
-                instance = module_coordinator.get_instance(module)  # type: ignore[assignment]
-                instance.set_transport(original_name, transport)  # type: ignore[union-attr]
+            for module_class, original_name in module_streams:
+                wiring.append(
+                    StreamWiring(
+                        module_class=module_class,
+                        stream_name=original_name,
+                        transport=transport,
+                    )
+                )
                 logger.info(
                     "Transport",
                     name=remapped_name,
                     original_name=original_name,
                     topic=str(getattr(transport, "topic", None)),
                     type=f"{stream_type.__module__}.{stream_type.__qualname__}",
-                    module=module.__name__,
+                    module=module_class.__name__,
                     transport=transport.__class__.__name__,
                 )
+        return wiring
 
-    def _connect_module_refs(self, module_coordinator: ModuleCoordinator) -> None:
-        # partly fill out the mod_and_mod_ref_to_proxy
-        mod_and_mod_ref_to_proxy = {
-            (module, name): replacement
-            for (module, name), replacement in self.remapping_map.items()
-            if is_spec(replacement) or is_module_type(replacement)
-        }
+    def _compile_module_ref_wiring(self) -> list[ModuleRefWiring]:
+        """Resolve module references and return wiring plan (pure — no side effects)."""
+        mod_and_mod_ref_to_target: dict[tuple[type[ModuleBase], str], type[ModuleBase]] = {}
 
-        # after this loop we should have an exact module for every module_ref on every blueprint
+        # Seed with explicit remappings that point to modules/specs
+        for (module, name), replacement in self.remapping_map.items():
+            if is_module_type(replacement):
+                mod_and_mod_ref_to_target[module, name] = replacement  # type: ignore[assignment]
+
         for blueprint in self._active_blueprints:
             for each_module_ref in blueprint.module_refs:
-                # we've got to find a another module that implements this spec
-                spec = mod_and_mod_ref_to_proxy.get(
-                    (blueprint.module, each_module_ref.name), each_module_ref.spec
-                )
-
-                # if the spec is actually module, use that (basically a user override)
-                if is_module_type(spec):
-                    mod_and_mod_ref_to_proxy[blueprint.module, each_module_ref.name] = spec
+                key = (blueprint.module, each_module_ref.name)
+                if key in mod_and_mod_ref_to_target:
                     continue
 
-                # find all available candidates
+                spec = self.remapping_map.get(key, each_module_ref.spec)
+                if is_module_type(spec):
+                    mod_and_mod_ref_to_target[key] = spec  # type: ignore[assignment]
+                    continue
+
                 possible_module_candidates = [
                     each_other_blueprint.module
                     for each_other_blueprint in self._active_blueprints
@@ -341,33 +371,26 @@ class Blueprint:
                         and spec_structural_compliance(each_other_blueprint.module, spec)
                     )
                 ]
-                # we keep valid separate from invalid to provide a better error message for "almost" valid cases
                 valid_module_candidates = [
                     each_candidate
                     for each_candidate in possible_module_candidates
                     if spec_annotation_compliance(each_candidate, spec)
                 ]
-                # none
+
                 if len(possible_module_candidates) == 0:
                     raise Exception(
                         f"""The {blueprint.module.__name__} has a module reference ({each_module_ref}) which requested a module that fills out the {each_module_ref.spec.__name__} spec. But I couldn't find a module that met that spec.\n"""
                     )
-                # exactly one structurally valid candidate
                 elif len(possible_module_candidates) == 1:
                     if len(valid_module_candidates) == 0:
                         logger.warning(
                             f"""The {blueprint.module.__name__} has a module reference ({each_module_ref}) which requested a module that fills out the {each_module_ref.spec.__name__} spec. I found a module ({possible_module_candidates[0].__name__}) that met that spec structurally, but it had a mismatch in type annotations.\nPlease either change the {each_module_ref.spec.__name__} spec or the {possible_module_candidates[0].__name__} module.\n"""
                         )
-                    mod_and_mod_ref_to_proxy[blueprint.module, each_module_ref.name] = (
-                        possible_module_candidates[0]
-                    )
-                    continue
-                # more than one
+                    mod_and_mod_ref_to_target[key] = possible_module_candidates[0]
                 elif len(valid_module_candidates) > 1:
                     raise Exception(
                         f"""The {blueprint.module.__name__} has a module reference ({each_module_ref}) which requested a module that fills out the {each_module_ref.spec.__name__} spec. But I found multiple modules that met that spec: {possible_module_candidates}.\nTo fix this use .remappings, for example:\n    autoconnect(...).remappings([ ({blueprint.module.__name__}, {each_module_ref.name!r}, <ModuleThatHasTheRpcCalls>) ])\n"""
                     )
-                # structural candidates, but no valid candidates
                 elif len(valid_module_candidates) == 0:
                     possible_module_candidates_str = ", ".join(
                         [each_candidate.__name__ for each_candidate in possible_module_candidates]
@@ -375,129 +398,118 @@ class Blueprint:
                     raise Exception(
                         f"""The {blueprint.module.__name__} has a module reference ({each_module_ref}) which requested a module that fills out the {each_module_ref.spec.__name__} spec. Some modules ({possible_module_candidates_str}) met the spec structurally but had a mismatch in type annotations\n"""
                     )
-                # one valid candidate (and more than one structurally valid candidate)
                 else:
-                    mod_and_mod_ref_to_proxy[blueprint.module, each_module_ref.name] = (
-                        valid_module_candidates[0]
-                    )
+                    mod_and_mod_ref_to_target[key] = valid_module_candidates[0]
 
-        # now that we know the streams, we mutate the RPCClient objects
-        for (base_module, module_ref_name), target_module in mod_and_mod_ref_to_proxy.items():
-            base_module_proxy = module_coordinator.get_instance(base_module)
-            target_module_proxy = module_coordinator.get_instance(target_module)  # type: ignore[type-var,arg-type]
-            setattr(
-                base_module_proxy,
-                module_ref_name,
-                target_module_proxy,
-            )
-            # Ensure the remote module instance can use the module ref inside its own RPC handlers.
-            base_module_proxy.set_module_ref(module_ref_name, target_module_proxy)
+        return [
+            ModuleRefWiring(base_module=base_module, ref_name=ref_name, target_module=target)
+            for (base_module, ref_name), target in mod_and_mod_ref_to_target.items()
+        ]
 
-    def _connect_rpc_methods(self, module_coordinator: ModuleCoordinator) -> None:
-        # Gather all RPC methods.
-        rpc_methods = {}
-        rpc_methods_dot = {}
+    def _compile_rpc_wiring(self) -> RpcWiringPlan:
+        """Compile the RPC method registry and binding requests (pure — no side effects)."""
+        # registry: rpc_key -> (module_class, method_name)
+        registry: dict[str, tuple[type[ModuleBase], str]] = {}
 
-        # Track interface methods to detect ambiguity.
-        interface_methods: defaultdict[str, list[tuple[type[ModuleBase], Callable[..., Any]]]] = (
-            defaultdict(list)
-        )  # interface_name_method -> [(module_class, method)]
-        interface_methods_dot: defaultdict[
-            str, list[tuple[type[ModuleBase], Callable[..., Any]]]
-        ] = defaultdict(list)  # interface_name.method -> [(module_class, method)]
+        # Track interface methods to detect ambiguity
+        interface_methods: defaultdict[str, list[tuple[type[ModuleBase], str]]] = defaultdict(list)
+        interface_methods_dot: defaultdict[str, list[tuple[type[ModuleBase], str]]] = defaultdict(
+            list
+        )
 
         for blueprint in self._active_blueprints:
             for method_name in blueprint.module.rpcs.keys():  # type: ignore[attr-defined]
-                module_proxy = module_coordinator.get_instance(blueprint.module)  # type: ignore[assignment]
-                method_for_rpc_client = getattr(module_proxy, method_name)
-                # Register under concrete class name (backward compatibility)
-                rpc_methods[f"{blueprint.module.__name__}_{method_name}"] = method_for_rpc_client
-                rpc_methods_dot[f"{blueprint.module.__name__}.{method_name}"] = (
-                    method_for_rpc_client
+                registry[f"{blueprint.module.__name__}_{method_name}"] = (
+                    blueprint.module,
+                    method_name,
+                )
+                registry[f"{blueprint.module.__name__}.{method_name}"] = (
+                    blueprint.module,
+                    method_name,
                 )
 
-                # Also register under any interface names
                 for base in blueprint.module.mro():
-                    # Check if this base is an abstract interface with the method
                     if (
                         base is not Module
                         and issubclass(base, ABC)
                         and hasattr(base, method_name)
                         and getattr(base, method_name, None) is not None
                     ):
-                        interface_key = f"{base.__name__}.{method_name}"
-                        interface_methods_dot[interface_key].append(
-                            (blueprint.module, method_for_rpc_client)
+                        interface_methods_dot[f"{base.__name__}.{method_name}"].append(
+                            (blueprint.module, method_name)
                         )
-                        interface_key_underscore = f"{base.__name__}_{method_name}"
-                        interface_methods[interface_key_underscore].append(
-                            (blueprint.module, method_for_rpc_client)
+                        interface_methods[f"{base.__name__}_{method_name}"].append(
+                            (blueprint.module, method_name)
                         )
 
-        # Check for ambiguity in interface methods and add non-ambiguous ones
-        for interface_key, implementations in interface_methods_dot.items():
+        # Add non-ambiguous interface methods to registry
+        for key, implementations in interface_methods_dot.items():
             if len(implementations) == 1:
-                rpc_methods_dot[interface_key] = implementations[0][1]
-        for interface_key, implementations in interface_methods.items():
+                registry[key] = implementations[0]
+        for key, implementations in interface_methods.items():
             if len(implementations) == 1:
-                rpc_methods[interface_key] = implementations[0][1]
+                registry[key] = implementations[0]
 
-        # Fulfil method requests (so modules can call each other).
+        # Compile set_ method bindings
+        set_methods: list[tuple[type[ModuleBase], str, str]] = []
         for blueprint in self._active_blueprints:
-            instance = module_coordinator.get_instance(blueprint.module)  # type: ignore[assignment]
-
             for method_name in blueprint.module.rpcs.keys():  # type: ignore[attr-defined]
                 if not method_name.startswith("set_"):
                     continue
-
                 linked_name = method_name.removeprefix("set_")
-
                 self._check_ambiguity(linked_name, interface_methods, blueprint.module)
+                if linked_name in registry:
+                    set_methods.append((blueprint.module, method_name, linked_name))
 
-                if linked_name not in rpc_methods:
-                    continue
+        # Compile rpc_call bindings (uses rpc_calls list from module)
+        rpc_call_bindings: list[tuple[type[ModuleBase], str, str]] = []
+        for blueprint in self._active_blueprints:
+            rpc_call_names: list[str] = getattr(blueprint.module, "rpc_calls", [])
+            for requested_name in rpc_call_names:
+                self._check_ambiguity(requested_name, interface_methods_dot, blueprint.module)
+                if requested_name in registry:
+                    rpc_call_bindings.append((blueprint.module, requested_name, requested_name))
 
-                getattr(instance, method_name)(rpc_methods[linked_name])
-
-            for requested_method_name in instance.get_rpc_method_names():  # type: ignore[union-attr]
-                self._check_ambiguity(
-                    requested_method_name, interface_methods_dot, blueprint.module
-                )
-
-                if requested_method_name not in rpc_methods_dot:
-                    continue
-
-                instance.set_rpc_method(  # type: ignore[union-attr]
-                    requested_method_name, rpc_methods_dot[requested_method_name]
-                )
+        return RpcWiringPlan(
+            registry=registry,
+            set_methods=tuple(set_methods),
+            rpc_call_bindings=tuple(rpc_call_bindings),
+        )
 
     def build(
         self,
         cli_config_overrides: Mapping[str, Any] | None = None,
     ) -> ModuleCoordinator:
         logger.info("Building the blueprint")
+
+        # Phase 1: Configuration
         global_config.update(**dict(self.global_config_overrides))
         if cli_config_overrides:
             global_config.update(**dict(cli_config_overrides))
 
+        # Phase 2: Validation
         self._run_configurators()
         self._check_requirements()
         self._verify_no_name_conflicts()
 
+        # Phase 3: Compile wiring plans (pure — no side effects)
+        module_specs = self._compile_module_specs(global_config)
+        stream_wiring = self._compile_stream_wiring()
+        module_ref_wiring = self._compile_module_ref_wiring()
+        rpc_wiring = self._compile_rpc_wiring()
+
+        # Phase 4: Execute (all mutations go through coordinator)
         logger.info("Starting the modules")
-        module_coordinator = ModuleCoordinator(g=global_config)
-        module_coordinator.start()
+        coordinator = ModuleCoordinator(g=global_config)
+        coordinator.start()
+        coordinator.deploy_parallel(module_specs)
+        coordinator.wire_streams(stream_wiring)
+        coordinator.wire_rpc_methods(rpc_wiring)
+        coordinator.wire_module_refs(module_ref_wiring)
+        coordinator.build_all_modules()
+        coordinator.start_all_modules()
 
-        # all module constructors are called here (each of them setup their own)
-        self._deploy_all_modules(module_coordinator, global_config)
-        self._connect_streams(module_coordinator)
-        self._connect_rpc_methods(module_coordinator)
-        self._connect_module_refs(module_coordinator)
-
-        module_coordinator.build_all_modules()
-        module_coordinator.start_all_modules()
-
-        return module_coordinator
+        return coordinator
 
 
 def autoconnect(*blueprints: Blueprint) -> Blueprint:
@@ -528,7 +540,6 @@ def autoconnect(*blueprints: Blueprint) -> Blueprint:
 
 
 def _eliminate_duplicates(blueprints: list[_BlueprintAtom]) -> list[_BlueprintAtom]:
-    # The duplicates are eliminated in reverse so that newer blueprints override older ones.
     seen = set()
     unique_blueprints = []
     for bp in reversed(blueprints):

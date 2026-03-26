@@ -28,6 +28,7 @@ from dimos.utils.thread_utils import safe_thread_map
 from dimos.utils.typing_utils import ExceptionGroup
 
 if TYPE_CHECKING:
+    from dimos.core.blueprints import ModuleRefWiring, RpcWiringPlan, StreamWiring
     from dimos.core.rpc_client import ModuleProxy, ModuleProxyProtocol
 
 logger = setup_logger()
@@ -148,6 +149,40 @@ class ModuleCoordinator(Resource):  # type: ignore[misc]
         safe_thread_map(list(groups.keys()), _deploy_group, _on_errors)
         _register()
         return results
+
+    def wire_streams(self, wiring: list[StreamWiring]) -> None:
+        """Apply stream transports to deployed modules."""
+        for w in wiring:
+            instance = self.get_instance(w.module_class)
+            instance.set_transport(w.stream_name, w.transport)  # type: ignore[union-attr]
+
+    def wire_rpc_methods(self, plan: RpcWiringPlan) -> None:
+        """Wire RPC methods between modules using the compiled plan."""
+        # Build callable registry from deployed instances
+        callables: dict[str, Any] = {}
+        for rpc_key, (module_class, method_name) in plan.registry.items():
+            proxy = self.get_instance(module_class)
+            callables[rpc_key] = getattr(proxy, method_name)
+
+        # Apply set_ methods
+        for module_class, set_method, linked_key in plan.set_methods:
+            if linked_key in callables:
+                instance = self.get_instance(module_class)
+                getattr(instance, set_method)(callables[linked_key])
+
+        # Apply rpc_call bindings
+        for module_class, requested_name, rpc_key in plan.rpc_call_bindings:
+            if rpc_key in callables:
+                instance = self.get_instance(module_class)
+                instance.set_rpc_method(requested_name, callables[rpc_key])  # type: ignore[union-attr]
+
+    def wire_module_refs(self, wiring: list[ModuleRefWiring]) -> None:
+        """Set module references between deployed modules."""
+        for w in wiring:
+            base_proxy = self.get_instance(w.base_module)
+            target_proxy = self.get_instance(w.target_module)
+            setattr(base_proxy, w.ref_name, target_proxy)
+            base_proxy.set_module_ref(w.ref_name, target_proxy)  # type: ignore[union-attr]
 
     def build_all_modules(self) -> None:
         """Call build() on all deployed modules in parallel.
