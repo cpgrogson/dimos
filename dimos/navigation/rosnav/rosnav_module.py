@@ -484,7 +484,6 @@ class ROSNav(Module, NavigationInterface):
         # self.rosnav_overall_map.publish(_pc2_from_ros(msg))
         pass
 
-
     def _on_ros_path(self, msg: ROSPath) -> None:
         dimos_path = _path_from_ros(msg)
         # The CMU nav stack publishes the path in the "vehicle" frame which
@@ -1039,8 +1038,10 @@ def _odometry_to_ros(odom: Odometry) -> "ROSOdometry":
             x=odom.pose.position.x, y=odom.pose.position.y, z=odom.pose.position.z
         ),
         orientation=ROSQuat(  # type: ignore[no-untyped-call]
-            x=odom.pose.orientation.x, y=odom.pose.orientation.y,
-            z=odom.pose.orientation.z, w=odom.pose.orientation.w,
+            x=odom.pose.orientation.x,
+            y=odom.pose.orientation.y,
+            z=odom.pose.orientation.z,
+            w=odom.pose.orientation.w,
         ),
     )
     ros_msg.twist.twist = ROSTwist(  # type: ignore[no-untyped-call]
