@@ -86,9 +86,13 @@ class WorkerManagerPython:
 
         self._n_modules += 1
         self._ensure_workers(self._n_modules)
-        worker = self._select_worker()
-        actor = worker.deploy_module(module_class, global_config, kwargs=kwargs)
-        return RPCClient(actor, module_class)
+        try:
+            worker = self._select_worker()
+            actor = worker.deploy_module(module_class, global_config, kwargs=kwargs)
+            return RPCClient(actor, module_class)
+        except Exception:
+            self._n_modules -= 1
+            raise
 
     def deploy_parallel(self, module_specs: Iterable[ModuleSpec]) -> list[RPCClient]:
         if self._closed:
@@ -116,6 +120,7 @@ class WorkerManagerPython:
         def _on_errors(
             _outcomes: list[Any], successes: list[RPCClient], errors: list[Exception]
         ) -> None:
+            self._n_modules -= len(errors)
             for rpc_client in successes:
                 with suppress(Exception):
                     rpc_client.stop_rpc_client()
