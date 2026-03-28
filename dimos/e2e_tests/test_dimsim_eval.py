@@ -23,11 +23,11 @@ Run individual evals or all of them:
 
 import json
 import os
+from pathlib import Path
 import signal
 import socket
 import subprocess
 import time
-from pathlib import Path
 
 import pytest
 import websocket
@@ -44,7 +44,9 @@ def _force_kill_port(port: int) -> None:
     try:
         result = subprocess.run(
             ["lsof", "-ti", f":{port}"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         pids = result.stdout.strip().split()
         for pid in pids:
@@ -117,7 +119,7 @@ class EvalClient:
 
     def run_workflow(self, workflow: dict) -> dict:
         """Send loadEnv + startWorkflow, wait for workflowComplete."""
-        timeout = (workflow.get("timeoutSec", 120) + 30)
+        timeout = workflow.get("timeoutSec", 120) + 30
         self._send({"type": "loadEnv", "scene": workflow.get("environment", "apt")})
         self._wait_for("envReady", timeout=30)
         self._send({"type": "startWorkflow", "workflow": workflow})
@@ -136,9 +138,7 @@ def _load_workflow(env: str, name: str) -> dict:
 def sim_eval():
     """Start dimos sim-eval headless, tear down after."""
     _force_kill_port(PORT)
-    assert _wait_for_port_free(PORT, timeout=10), (
-        f"Port {PORT} still in use after force-kill"
-    )
+    assert _wait_for_port_free(PORT, timeout=10), f"Port {PORT} still in use after force-kill"
     log_dir = os.environ.get("DIMSIM_EVAL_LOG_DIR", "")
     if log_dir:
         log_path = Path(log_dir)

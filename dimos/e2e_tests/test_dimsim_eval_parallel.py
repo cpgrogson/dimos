@@ -20,14 +20,14 @@ Runs all workflows concurrently, cutting wall-clock time to ~1 min.
     pytest test_sim_eval.py -v -s -m slow
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
+from pathlib import Path
 import signal
 import socket
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
 
 import pytest
 import websocket
@@ -45,7 +45,9 @@ def _force_kill_port(port: int) -> None:
     try:
         result = subprocess.run(
             ["lsof", "-ti", f":{port}"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         pids = result.stdout.strip().split()
         for pid in pids:
@@ -87,7 +89,9 @@ def _wait_for_all_pages(log_path: Path, num_pages: int, timeout: float = 90) -> 
         except FileNotFoundError:
             pass
         time.sleep(2)
-    print(f"  WARNING: page-{num_pages - 1} sensor data not seen after {timeout}s, proceeding anyway")
+    print(
+        f"  WARNING: page-{num_pages - 1} sensor data not seen after {timeout}s, proceeding anyway"
+    )
 
 
 def _wait_for_port_free(port: int, timeout: float = 30) -> bool:
@@ -147,7 +151,7 @@ class EvalClient:
 
     def run_workflow(self, workflow: dict) -> dict:
         """Send loadEnv + startWorkflow, wait for workflowComplete."""
-        timeout = (workflow.get("timeoutSec", 120) + 30)
+        timeout = workflow.get("timeoutSec", 120) + 30
         self._send({"type": "loadEnv", "scene": workflow.get("environment", "apt")})
         self._wait_for("envReady", timeout=30)
         self._send({"type": "startWorkflow", "workflow": workflow})
@@ -214,9 +218,7 @@ class ChannelEvalClient(EvalClient):
 def parallel_env():
     """Start dimos-0 (launches dimsim with 3 channels), then dimos-1/2 (connect-only)."""
     _force_kill_port(PORT)
-    assert _wait_for_port_free(PORT, timeout=10), (
-        f"Port {PORT} still in use after force-kill"
-    )
+    assert _wait_for_port_free(PORT, timeout=10), f"Port {PORT} still in use after force-kill"
 
     calls: list[DimosCliCall] = []
     log_files: list = []
@@ -372,6 +374,6 @@ class TestSimEvalParallel:
             print(f"  {name}: ERROR — {err}")
             failures.append(f"{name}: ERROR — {err}")
 
-        assert not failures, (
-            f"{len(failures)}/{NUM_CHANNELS} evals failed:\n" + "\n".join(f"  - {f}" for f in failures)
+        assert not failures, f"{len(failures)}/{NUM_CHANNELS} evals failed:\n" + "\n".join(
+            f"  - {f}" for f in failures
         )

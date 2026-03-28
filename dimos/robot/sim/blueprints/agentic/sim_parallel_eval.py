@@ -27,6 +27,7 @@ Usage:
 """
 
 import os
+
 from dimos.core.blueprints import autoconnect
 from dimos.core.transport import JpegLcmTransport
 from dimos.mapping.costmapper import cost_mapper

@@ -22,11 +22,11 @@ topics are publishing and that cmd_vel actually moves the robot.
 
 import math
 import os
+from pathlib import Path
 import signal
 import socket
 import subprocess
 import time
-from pathlib import Path
 
 import pytest
 
@@ -43,7 +43,9 @@ def _force_kill_port(port: int) -> None:
     try:
         result = subprocess.run(
             ["lsof", "-ti", f":{port}"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         pids = result.stdout.strip().split()
         for pid in pids:
@@ -108,9 +110,7 @@ def sim_nav():
     )
 
     try:
-        assert _wait_for_port(BRIDGE_PORT, timeout=120), (
-            f"Bridge not ready on port {BRIDGE_PORT}"
-        )
+        assert _wait_for_port(BRIDGE_PORT, timeout=120), f"Bridge not ready on port {BRIDGE_PORT}"
         yield call
     finally:
         call.stop()
@@ -202,7 +202,9 @@ class TestSimNav:
         assert len(initial_msgs) > 0, "No initial odom"
         initial_pose = PoseStamped.lcm_decode(initial_msgs[-1])
         initial_pos = initial_pose.position
-        print(f"  initial position: ({initial_pos.x:.2f}, {initial_pos.y:.2f}, {initial_pos.z:.2f})")
+        print(
+            f"  initial position: ({initial_pos.x:.2f}, {initial_pos.y:.2f}, {initial_pos.z:.2f})"
+        )
 
         # Send forward velocity for 3 seconds
         twist = Twist(

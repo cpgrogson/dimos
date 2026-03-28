@@ -195,7 +195,9 @@ class DimSimBridge(NativeModule, spec.Camera, spec.Pointcloud):
             try:
                 result = subprocess.run(
                     [dimsim_path, "--version"],
-                    capture_output=True, text=True, timeout=5,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
                 )
                 installed_ver = result.stdout.strip() if result.returncode == 0 else None
             except Exception:
@@ -239,7 +241,9 @@ class DimSimBridge(NativeModule, spec.Camera, spec.Pointcloud):
                     try:
                         logger.info(f"Downloading dimsim {latest_ver} for {system}/{machine}...")
                         urllib.request.urlretrieve(url, str(dimsim))
-                        dimsim.chmod(dimsim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+                        dimsim.chmod(
+                            dimsim.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+                        )
                         # macOS quarantines downloaded binaries — clear all xattrs
                         if system == "darwin":
                             subprocess.run(
@@ -250,7 +254,9 @@ class DimSimBridge(NativeModule, spec.Camera, spec.Pointcloud):
                         downloaded = True
                         logger.info("dimsim binary installed.")
                     except Exception as exc:
-                        logger.warning(f"Compiled binary not available ({exc}), trying deno fallback...")
+                        logger.warning(
+                            f"Compiled binary not available ({exc}), trying deno fallback..."
+                        )
 
             # Fallback: install via deno if compiled binary not available
             if not downloaded and not dimsim_path:
@@ -267,7 +273,9 @@ class DimSimBridge(NativeModule, spec.Camera, spec.Pointcloud):
             logger.info(f"dimsim up-to-date (v{installed_ver})")
 
         if not dimsim_path:
-            raise FileNotFoundError("dimsim not found — install Deno and retry, or wait for next release with compiled binaries")
+            raise FileNotFoundError(
+                "dimsim not found — install Deno and retry, or wait for next release with compiled binaries"
+            )
 
         # Symlink to ~/.local/bin so `dimsim` is on PATH for eval authoring
         local_bin = Path.home() / ".local" / "bin"
