@@ -238,6 +238,7 @@ class RerunBridgeModule(Module[Config]):
     """
 
     default_config = Config
+    _last_log: dict[str, float] = {}
 
     @lru_cache(maxsize=256)
     def _visual_override_for_entity_path(
@@ -321,7 +322,7 @@ class RerunBridgeModule(Module[Config]):
 
         super().start()
 
-        self._last_log: dict[str, float] = {}
+        self._last_log: dict[str, float] = {}  # reset on each start
         logger.info("Rerun bridge starting", viewer_mode=self.config.viewer_mode)
 
         # Initialize and spawn Rerun viewer
@@ -403,6 +404,7 @@ class RerunBridgeModule(Module[Config]):
 
     @rpc
     def stop(self) -> None:
+        self._visual_override_for_entity_path.cache_clear()
         super().stop()
 
 

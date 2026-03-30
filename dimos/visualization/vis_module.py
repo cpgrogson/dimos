@@ -59,6 +59,8 @@ def vis_module(
         case "foxglove":
             from dimos.robot.foxglove_bridge import FoxgloveBridge
 
+            # WS server is included even with Foxglove so dimos-viewer
+            # keyboard/click events still reach the robot.
             return autoconnect(
                 FoxgloveBridge.blueprint(**foxglove_config),
                 RerunWebSocketServer.blueprint(),
@@ -77,4 +79,7 @@ def vis_module(
         case "none":
             return autoconnect()
         case _:
-            return autoconnect(RerunWebSocketServer.blueprint())
+            raise ValueError(
+                f"Unknown viewer_backend {viewer_backend!r}. "
+                f"Expected one of: rerun, rerun-web, rerun-connect, foxglove, none"
+            )

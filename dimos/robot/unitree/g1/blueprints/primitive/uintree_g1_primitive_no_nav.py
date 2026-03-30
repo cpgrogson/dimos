@@ -41,6 +41,7 @@ from dimos.navigation.frontier_exploration.wavefront_frontier_goal_selector impo
     WavefrontFrontierExplorer,
 )
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
+from dimos.visualization.vis_module import vis_module
 
 
 def _convert_camera_info(camera_info: Any) -> Any:
@@ -107,8 +108,6 @@ rerun_config = {
         "world/tf/base_link": _static_base_link,
     },
 }
-
-from dimos.visualization.vis_module import vis_module
 
 _vis = vis_module(
     viewer_backend=global_config.viewer,

@@ -53,6 +53,7 @@ class Config(ModuleConfig):
     # any machine on the network (the typical robot deployment scenario).
     host: str = "0.0.0.0"
     port: int = 3030
+    start_timeout: float = 10.0  # seconds to wait for the server to bind
 
 
 class RerunWebSocketServer(Module[Config]):
@@ -76,7 +77,7 @@ class RerunWebSocketServer(Module[Config]):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._teleop_active = False
+        self._teleop_clients: set[int] = set()  # ids of clients currently in teleop
         self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._server_thread: threading.Thread | None = None
         self._stop_event: asyncio.Event | None = None
@@ -89,15 +90,16 @@ class RerunWebSocketServer(Module[Config]):
             target=self._run_server, daemon=True, name="rerun-ws-server"
         )
         self._server_thread.start()
+        self._server_ready.wait(timeout=self.config.start_timeout)
         logger.info(
-            f"RerunWebSocketServer starting on ws://{self.config.host}:{self.config.port}/ws"
+            f"RerunWebSocketServer listening on ws://{self.config.host}:{self.config.port}/ws"
         )
 
     @rpc
     def stop(self) -> None:
         # Wait briefly for the server thread to initialise _stop_event so we
         # don't silently skip the shutdown signal (race with _serve()).
-        self._server_ready.wait(timeout=5.0)
+        self._server_ready.wait(timeout=self.config.start_timeout)
         if (
             self._ws_loop is not None
             and not self._ws_loop.is_closed()
@@ -109,7 +111,6 @@ class RerunWebSocketServer(Module[Config]):
     def _run_server(self) -> None:
         """Entry point for the background server thread."""
         self._ws_loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._ws_loop)
         try:
             self._ws_loop.run_until_complete(self._serve())
         except Exception:
@@ -133,9 +134,6 @@ class RerunWebSocketServer(Module[Config]):
             ping_timeout=30,
         ):
             self._server_ready.set()
-            logger.info(
-                f"RerunWebSocketServer listening on ws://{self.config.host}:{self.config.port}/ws"
-            )
             await self._stop_event.wait()
 
     async def _handle_client(self, websocket: Any) -> None:
@@ -143,16 +141,17 @@ class RerunWebSocketServer(Module[Config]):
             await websocket.close(1008, "Not Found")
             return
         addr = websocket.remote_address
+        client_id = id(websocket)
         logger.info(f"RerunWebSocketServer: viewer connected from {addr}")
         try:
             async for raw in websocket:
-                self._dispatch(raw)
+                self._dispatch(raw, client_id)
         except websockets.ConnectionClosed as exc:
             logger.debug(f"RerunWebSocketServer: client {addr} disconnected ({exc})")
         finally:
-            self._teleop_active = False
+            self._teleop_clients.discard(client_id)
 
-    def _dispatch(self, raw: str | bytes) -> None:
+    def _dispatch(self, raw: str | bytes, client_id: int) -> None:
         try:
             msg = json.loads(raw)
         except json.JSONDecodeError:
@@ -190,14 +189,14 @@ class RerunWebSocketServer(Module[Config]):
                 ),
             )
             logger.debug(f"RerunWebSocketServer: twist → {twist}")
-            if not self._teleop_active:
-                self._teleop_active = True
+            if not self._teleop_clients:
                 self.stop_explore_cmd.publish(Bool(data=True))
+            self._teleop_clients.add(client_id)
             self.tele_cmd_vel.publish(twist)
 
         elif msg_type == "stop":
             logger.debug("RerunWebSocketServer: stop")
-            self._teleop_active = False
+            self._teleop_clients.discard(client_id)
             self.tele_cmd_vel.publish(Twist.zero())
 
         elif msg_type == "heartbeat":

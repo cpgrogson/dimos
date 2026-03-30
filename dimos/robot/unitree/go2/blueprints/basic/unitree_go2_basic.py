@@ -25,6 +25,7 @@ from dimos.msgs.sensor_msgs.Image import Image
 from dimos.protocol.pubsub.impl.lcmpubsub import LCM
 from dimos.protocol.service.system_configurator.clock_sync import ClockSyncConfigurator
 from dimos.robot.unitree.go2.connection import GO2Connection
+from dimos.visualization.vis_module import vis_module
 
 # Mac has some issue with high bandwidth UDP, so we use pSHMTransport for color_image
 # actually we can use pSHMTransport for all platforms, and for all streams
@@ -113,8 +114,6 @@ rerun_config = {
     },
 }
 
-
-from dimos.visualization.vis_module import vis_module
 
 _vis = vis_module(
     viewer_backend=global_config.viewer,
