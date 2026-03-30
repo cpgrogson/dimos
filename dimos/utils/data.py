@@ -243,6 +243,11 @@ def get_data(name: str | Path) -> Path:
         # Nested path - downloads "dataset" archive, returns path to nested file
         frame = get_data("dataset/frames/001.png")
     """
+    import traceback
+
+    print(f"[get_data] requested: {name!r}")
+    traceback.print_stack()
+
     data_dir = get_data_dir()
     file_path = data_dir / name
 
