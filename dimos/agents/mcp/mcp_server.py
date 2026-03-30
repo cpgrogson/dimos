@@ -31,7 +31,6 @@ from dimos.agents.annotation import skill
 from dimos.core.core import rpc
 from dimos.core.module import Module
 from dimos.core.rpc_client import RpcCall, RPCClient
-from dimos.protocol.rpc.spec import DEFAULT_RPC_TIMEOUT
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
@@ -196,12 +195,7 @@ class McpServer(Module):
         ]
         app.state.rpc_calls = {
             skill_info.func_name: RpcCall(
-                None,
-                self.rpc,
-                skill_info.func_name,
-                skill_info.class_name,
-                [],
-                timeout=DEFAULT_RPC_TIMEOUT,
+                None, self.rpc, skill_info.func_name, skill_info.class_name, []
             )
             for skill_info in app.state.skills
         }
