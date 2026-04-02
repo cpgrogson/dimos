@@ -40,8 +40,6 @@ def _default_paths_dir() -> str:
 class LocalPlannerConfig(NativeModuleConfig):
     """Config for the local planner native module.
 
-    Field names map to C++ CLI args via snake_case → camelCase conversion
-    (e.g. ``autonomy_mode`` → ``--autonomyMode``).
     Fields with ``None`` default are omitted from the CLI.
     """
 
@@ -50,6 +48,21 @@ class LocalPlannerConfig(NativeModuleConfig):
     build_command: str | None = (
         "nix build github:dimensionalOS/dimos-module-local-planner/v0.1.1 --no-write-lock-file"
     )
+
+    # C++ binary uses camelCase CLI args (except paths_dir).
+    cli_name_override: dict[str, str] = {
+        "vehicle_config": "vehicleConfig",
+        "max_speed": "maxSpeed",
+        "autonomy_speed": "autonomySpeed",
+        "autonomy_mode": "autonomyMode",
+        "use_terrain_analysis": "useTerrainAnalysis",
+        "obstacle_height_thre": "obstacleHeightThre",
+        "max_rel_z": "maxRelZ",
+        "min_rel_z": "minRelZ",
+        "goal_clearance": "goalClearance",
+        "goal_x": "goalX",
+        "goal_y": "goalY",
+    }
 
     # Path data directory (auto-resolved from LFS)
     paths_dir: str = ""

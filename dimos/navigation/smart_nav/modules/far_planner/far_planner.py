@@ -37,6 +37,9 @@ class FarPlannerConfig(NativeModuleConfig):
         "nix build github:dimensionalOS/dimos-module-far-planner/v0.1.0 --no-write-lock-file"
     )
 
+    # C++ binary uses snake_case CLI args.
+    # (No cli_name_override needed — field names match C++ args directly.)
+
     # Planner parameters
     visibility_range: float = 15.0
     update_rate: float = 2.0

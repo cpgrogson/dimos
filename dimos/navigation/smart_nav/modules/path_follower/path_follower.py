@@ -30,8 +30,6 @@ from dimos.msgs.nav_msgs.Path import Path
 class PathFollowerConfig(NativeModuleConfig):
     """Config for the path follower native module.
 
-    Field names map to C++ CLI args via snake_case → camelCase conversion
-    (e.g. ``autonomy_mode`` → ``--autonomyMode``).
     Fields with ``None`` default are omitted from the CLI.
     """
 
@@ -40,6 +38,19 @@ class PathFollowerConfig(NativeModuleConfig):
     build_command: str | None = (
         "nix build github:dimensionalOS/dimos-module-path-follower/v0.1.0 --no-write-lock-file"
     )
+
+    # C++ binary uses camelCase CLI args.
+    cli_name_override: dict[str, str] = {
+        "look_ahead_distance": "lookAheadDis",
+        "max_speed": "maxSpeed",
+        "max_yaw_rate": "maxYawRate",
+        "goal_tolerance": "goalTolerance",
+        "vehicle_config": "vehicleConfig",
+        "autonomy_mode": "autonomyMode",
+        "autonomy_speed": "autonomySpeed",
+        "max_accel": "maxAccel",
+        "slow_dwn_dis_thre": "slowDwnDisThre",
+    }
 
     # --- Pure pursuit parameters ---
 

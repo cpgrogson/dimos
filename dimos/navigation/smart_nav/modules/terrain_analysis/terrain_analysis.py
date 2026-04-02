@@ -20,8 +20,6 @@ a terrain cost map with obstacle classification.
 
 from __future__ import annotations
 
-from pydantic import Field
-
 from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.nav_msgs.Odometry import Odometry
@@ -31,8 +29,6 @@ from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 class TerrainAnalysisConfig(NativeModuleConfig):
     """Config for the terrain analysis native module.
 
-    Field names map to C++ CLI args via snake_case → camelCase conversion
-    (e.g. ``obstacle_height_thre`` → ``--obstacleHeightThre``).
     Fields with ``None`` default are omitted from the CLI, letting the
     C++ binary use its own built-in default.
     """
@@ -42,12 +38,39 @@ class TerrainAnalysisConfig(NativeModuleConfig):
     build_command: str | None = (
         "nix build github:dimensionalOS/dimos-module-terrain-analysis/v0.1.0 --no-write-lock-file"
     )
-    cli_name_override: dict[str, str] = Field(
-        default={
-            "min_dy_obs_vfov": "minDyObsVFOV",
-            "max_dy_obs_vfov": "maxDyObsVFOV",
-        }
-    )
+    # C++ binary uses camelCase CLI args (with VFOV all-caps).
+    cli_name_override: dict[str, str] = {
+        "sensor_range": "sensorRange",
+        "scan_voxel_size": "scanVoxelSize",
+        "terrain_voxel_size": "terrainVoxelSize",
+        "terrain_voxel_half_width": "terrainVoxelHalfWidth",
+        "obstacle_height_thre": "obstacleHeightThre",
+        "ground_height_thre": "groundHeightThre",
+        "vehicle_height": "vehicleHeight",
+        "min_rel_z": "minRelZ",
+        "max_rel_z": "maxRelZ",
+        "use_sorting": "useSorting",
+        "quantile_z": "quantileZ",
+        "decay_time": "decayTime",
+        "no_decay_dis": "noDecayDis",
+        "clearing_dis": "clearingDis",
+        "clear_dy_obs": "clearDyObs",
+        "no_data_obstacle": "noDataObstacle",
+        "no_data_block_skip_num": "noDataBlockSkipNum",
+        "min_block_point_num": "minBlockPointNum",
+        "voxel_point_update_thre": "voxelPointUpdateThre",
+        "voxel_time_update_thre": "voxelTimeUpdateThre",
+        "min_dy_obs_dis": "minDyObsDis",
+        "abs_dy_obs_rel_z_thre": "absDyObsRelZThre",
+        "min_dy_obs_vfov": "minDyObsVFOV",
+        "max_dy_obs_vfov": "maxDyObsVFOV",
+        "min_dy_obs_point_num": "minDyObsPointNum",
+        "min_out_of_fov_point_num": "minOutOfFovPointNum",
+        "consider_drop": "considerDrop",
+        "limit_ground_lift": "limitGroundLift",
+        "max_ground_lift": "maxGroundLift",
+        "dis_ratio_z": "disRatioZ",
+    }
 
     # --- Sensor / input filtering ---
 
