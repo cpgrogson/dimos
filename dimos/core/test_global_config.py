@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Copyright 2025-2026 Dimensional Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,24 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
-
-from typing import (
-    TYPE_CHECKING,
-    TypeVar,
-)
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-T = TypeVar("T")
-
-from typing import ParamSpec, TypeVar
-
-P = ParamSpec("P")
-R = TypeVar("R")
+"""Tests for GlobalConfig security defaults."""
 
 
-def rpc(fn: Callable[P, R]) -> Callable[P, R]:
-    fn.__rpc__ = True  # type: ignore[attr-defined]
-    return fn
+class TestGlobalConfigSecurityDefaults:
+    """Network services must bind to localhost by default (not 0.0.0.0)."""
+
+    def test_mcp_host_defaults_to_localhost(self) -> None:
+        from dimos.core.global_config import GlobalConfig
+
+        config = GlobalConfig()
+        assert config.mcp_host == "127.0.0.1", (
+            f"mcp_host must default to 127.0.0.1, got {config.mcp_host}"
+        )
