@@ -199,8 +199,8 @@ def test_multi_waypoint_loop():
             autonomy_mode=True,
             max_speed=2.0,
             autonomy_speed=2.0,
-            max_accel=4.0,
-            slow_dwn_dis_thre=0.2,
+            max_acceleration=4.0,
+            slow_down_distance_threshold=0.2,
         ),
     )
     coord = blueprint.build()

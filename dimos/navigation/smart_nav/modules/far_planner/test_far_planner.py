@@ -28,18 +28,18 @@ class TestFarPlannerConfig:
         config = FarPlannerConfig()
         assert config.visibility_range == 15.0
         assert config.update_rate == 2.0
-        assert config.robot_dim == 0.5
+        assert config.robot_dimension == 0.5
         assert config.sensor_range == 20.0
 
     def test_cli_args_generation(self):
         config = FarPlannerConfig(
             visibility_range=20.0,
-            robot_dim=0.8,
+            robot_dimension=0.8,
         )
         args = config.to_cli_args()
         assert "--visibility_range" in args
         assert "20.0" in args
-        assert "--robot_dim" in args
+        assert "--robot_dim" in args  # cli_name_override maps robot_dimension → robot_dim
         assert "0.8" in args
 
 

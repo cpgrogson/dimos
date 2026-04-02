@@ -56,9 +56,9 @@ class LocalPlannerConfig(NativeModuleConfig):
         "autonomy_speed": "autonomySpeed",
         "autonomy_mode": "autonomyMode",
         "use_terrain_analysis": "useTerrainAnalysis",
-        "obstacle_height_thre": "obstacleHeightThre",
-        "max_rel_z": "maxRelZ",
-        "min_rel_z": "minRelZ",
+        "obstacle_height_threshold": "obstacleHeightThre",
+        "max_relative_z": "maxRelZ",
+        "min_relative_z": "minRelZ",
         "goal_clearance": "goalClearance",
         "goal_x": "goalX",
         "goal_y": "goalY",
@@ -92,11 +92,11 @@ class LocalPlannerConfig(NativeModuleConfig):
     # --- Obstacle detection ---
 
     # Points higher than this above ground are classified as obstacles (m).
-    obstacle_height_thre: float = 0.15
+    obstacle_height_threshold: float = 0.15
     # Height-band filter: maximum z relative to robot (m).
-    max_rel_z: float | None = None
+    max_relative_z: float | None = None
     # Height-band filter: minimum z relative to robot (m).
-    min_rel_z: float | None = None
+    min_relative_z: float | None = None
 
     # --- Goal parameters ---
 

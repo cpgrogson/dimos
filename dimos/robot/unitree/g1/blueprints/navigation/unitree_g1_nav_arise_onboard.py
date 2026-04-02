@@ -43,7 +43,7 @@ from dimos.navigation.smart_nav.modules.sensor_scan_generation.sensor_scan_gener
 from dimos.robot.unitree.g1.blueprints.navigation._smart_nav import _rerun_config, _smart_nav
 from dimos.robot.unitree.g1.config import G1
 from dimos.robot.unitree.g1.effectors.high_level.dds_sdk import G1HighLevelDdsSdk
-from dimos.visualization.rerun.bridge import RerunBridgeModule, _resolve_viewer_mode
+from dimos.visualization.rerun.bridge import RerunBridgeModule
 
 unitree_g1_nav_arise_onboard = (
     autoconnect(
@@ -54,18 +54,14 @@ unitree_g1_nav_arise_onboard = (
         ),
         AriseSLAM.blueprint(
             mount=G1.internal_odom_offsets["mid360_link"],
-            extra_args=[
-                "--scanVoxelSize",
-                "0.1",
-                "--maxRange",
-                "50.0",
-            ],
+            scan_voxel_size=0.1,
+            max_range=50.0,
         ),
         SensorScanGeneration.blueprint(),
         _smart_nav,
         GlobalMap.blueprint(),
         G1HighLevelDdsSdk.blueprint(),
-        RerunBridgeModule.blueprint(viewer_mode=_resolve_viewer_mode(), **_rerun_config),
+        RerunBridgeModule.blueprint(**_rerun_config),
     )
     .remappings(
         [

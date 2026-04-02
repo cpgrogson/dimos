@@ -48,8 +48,8 @@ class PathFollowerConfig(NativeModuleConfig):
         "vehicle_config": "vehicleConfig",
         "autonomy_mode": "autonomyMode",
         "autonomy_speed": "autonomySpeed",
-        "max_accel": "maxAccel",
-        "slow_dwn_dis_thre": "slowDwnDisThre",
+        "max_acceleration": "maxAccel",
+        "slow_down_distance_threshold": "slowDwnDisThre",
     }
 
     # --- Pure pursuit parameters ---
@@ -81,9 +81,9 @@ class PathFollowerConfig(NativeModuleConfig):
     # --- Acceleration / slowdown ---
 
     # Maximum linear acceleration (m/s²).
-    max_accel: float | None = None
+    max_acceleration: float | None = None
     # Distance threshold below which the follower begins slowing down (m).
-    slow_dwn_dis_thre: float | None = None
+    slow_down_distance_threshold: float | None = None
 
 
 class PathFollower(NativeModule):

@@ -44,32 +44,32 @@ class TerrainAnalysisConfig(NativeModuleConfig):
         "scan_voxel_size": "scanVoxelSize",
         "terrain_voxel_size": "terrainVoxelSize",
         "terrain_voxel_half_width": "terrainVoxelHalfWidth",
-        "obstacle_height_thre": "obstacleHeightThre",
-        "ground_height_thre": "groundHeightThre",
+        "obstacle_height_threshold": "obstacleHeightThre",
+        "ground_height_threshold": "groundHeightThre",
         "vehicle_height": "vehicleHeight",
-        "min_rel_z": "minRelZ",
-        "max_rel_z": "maxRelZ",
+        "min_relative_z": "minRelZ",
+        "max_relative_z": "maxRelZ",
         "use_sorting": "useSorting",
         "quantile_z": "quantileZ",
         "decay_time": "decayTime",
-        "no_decay_dis": "noDecayDis",
-        "clearing_dis": "clearingDis",
-        "clear_dy_obs": "clearDyObs",
+        "no_decay_distance": "noDecayDis",
+        "clearing_distance": "clearingDis",
+        "clear_dynamic_obstacles": "clearDyObs",
         "no_data_obstacle": "noDataObstacle",
-        "no_data_block_skip_num": "noDataBlockSkipNum",
-        "min_block_point_num": "minBlockPointNum",
-        "voxel_point_update_thre": "voxelPointUpdateThre",
-        "voxel_time_update_thre": "voxelTimeUpdateThre",
-        "min_dy_obs_dis": "minDyObsDis",
-        "abs_dy_obs_rel_z_thre": "absDyObsRelZThre",
-        "min_dy_obs_vfov": "minDyObsVFOV",
-        "max_dy_obs_vfov": "maxDyObsVFOV",
-        "min_dy_obs_point_num": "minDyObsPointNum",
-        "min_out_of_fov_point_num": "minOutOfFovPointNum",
+        "no_data_block_skip_count": "noDataBlockSkipNum",
+        "min_block_point_count": "minBlockPointNum",
+        "voxel_point_update_threshold": "voxelPointUpdateThre",
+        "voxel_time_update_threshold": "voxelTimeUpdateThre",
+        "min_dynamic_obstacle_distance": "minDyObsDis",
+        "abs_dynamic_obstacle_relative_z_threshold": "absDyObsRelZThre",
+        "min_dynamic_obstacle_vfov": "minDyObsVFOV",
+        "max_dynamic_obstacle_vfov": "maxDyObsVFOV",
+        "min_dynamic_obstacle_point_count": "minDyObsPointNum",
+        "min_out_of_fov_point_count": "minOutOfFovPointNum",
         "consider_drop": "considerDrop",
         "limit_ground_lift": "limitGroundLift",
         "max_ground_lift": "maxGroundLift",
-        "dis_ratio_z": "disRatioZ",
+        "distance_ratio_z": "disRatioZ",
     }
 
     # --- Sensor / input filtering ---
@@ -86,15 +86,15 @@ class TerrainAnalysisConfig(NativeModuleConfig):
     # --- Obstacle / ground classification ---
 
     # Points higher than this above ground are classified as obstacles (m).
-    obstacle_height_thre: float = 0.15
+    obstacle_height_threshold: float = 0.15
     # Points lower than this are considered ground in cost-map mode (m).
-    ground_height_thre: float = 0.1
+    ground_height_threshold: float = 0.1
     # Ignore points above this height relative to the vehicle (m).
     vehicle_height: float | None = None
     # Height-band filter: minimum z relative to robot (m).
-    min_rel_z: float | None = None
+    min_relative_z: float | None = None
     # Height-band filter: maximum z relative to robot (m).
-    max_rel_z: float | None = None
+    max_relative_z: float | None = None
 
     # --- Sorting / quantile ground estimation ---
 
@@ -108,39 +108,39 @@ class TerrainAnalysisConfig(NativeModuleConfig):
     # How long terrain points persist before expiring (s).
     decay_time: float | None = None
     # Radius around robot where points never decay (m).
-    no_decay_dis: float | None = None
+    no_decay_distance: float | None = None
     # Dynamic clearing distance — points beyond this from new obs are removed (m).
-    clearing_dis: float | None = None
+    clearing_distance: float | None = None
     # Whether to actively clear dynamic obstacles.
-    clear_dy_obs: bool | None = None
+    clear_dynamic_obstacles: bool | None = None
     # Treat unseen (no-data) voxels as obstacles.
     no_data_obstacle: bool | None = None
     # Number of no-data blocks to skip before treating as obstacle.
-    no_data_block_skip_num: int | None = None
+    no_data_block_skip_count: int | None = None
     # Minimum points per terrain block for valid classification.
-    min_block_point_num: int | None = None
+    min_block_point_count: int | None = None
 
     # --- Voxel culling ---
 
     # Reprocess a voxel after this many new points accumulate.
-    voxel_point_update_thre: int | None = None
+    voxel_point_update_threshold: int | None = None
     # Cull a voxel after this many seconds since last update (s).
-    voxel_time_update_thre: float | None = None
+    voxel_time_update_threshold: float | None = None
 
     # --- Dynamic obstacle filtering ---
 
     # Minimum distance from sensor for dynamic obstacle detection (m).
-    min_dy_obs_dis: float | None = None
+    min_dynamic_obstacle_distance: float | None = None
     # Absolute z-threshold for dynamic obstacle classification (m).
-    abs_dy_obs_rel_z_thre: float | None = None
+    abs_dynamic_obstacle_relative_z_threshold: float | None = None
     # Minimum vertical FOV angle for dynamic obstacle detection (deg).
-    min_dy_obs_vfov: float | None = None
+    min_dynamic_obstacle_vfov: float | None = None
     # Maximum vertical FOV angle for dynamic obstacle detection (deg).
-    max_dy_obs_vfov: float | None = None
+    max_dynamic_obstacle_vfov: float | None = None
     # Minimum number of points to qualify as a dynamic obstacle.
-    min_dy_obs_point_num: int | None = None
+    min_dynamic_obstacle_point_count: int | None = None
     # Minimum out-of-FOV points before classifying as dynamic.
-    min_out_of_fov_point_num: int | None = None
+    min_out_of_fov_point_count: int | None = None
 
     # --- Ground lift limits ---
 
@@ -151,7 +151,7 @@ class TerrainAnalysisConfig(NativeModuleConfig):
     # Maximum ground plane lift per frame (m).
     max_ground_lift: float | None = None
     # Distance-to-z ratio used for slope-based point filtering.
-    dis_ratio_z: float | None = None
+    distance_ratio_z: float | None = None
 
 
 class TerrainAnalysis(NativeModule):

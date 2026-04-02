@@ -39,14 +39,30 @@ class AriseSLAMConfig(NativeModuleConfig):
         "nix build github:dimensionalOS/dimos-module-arise-slam/v0.1.0 --no-write-lock-file"
     )
 
+    # C++ binary uses camelCase CLI args.
+    cli_name_override: dict[str, str] = {
+        "edge_threshold": "edgeThreshold",
+        "surf_threshold": "surfThreshold",
+        "scan_voxel_size": "scanVoxelSize",
+        "line_resolution": "lineRes",
+        "plane_resolution": "planeRes",
+        "max_range": "maxRange",
+        "max_icp_iterations": "maxICPIterations",
+        "max_lm_iterations": "maxLMIterations",
+        "use_imu": "useIMU",
+        "min_publish_interval": "minPublishInterval",
+        "publish_map": "publishMap",
+        "map_publish_rate": "mapPublishRate",
+    }
+
     # Feature extraction
     edge_threshold: float = 1.0
     surf_threshold: float = 0.1
     scan_voxel_size: float = 0.1
 
     # Local map
-    line_res: float = 0.2
-    plane_res: float = 0.4
+    line_resolution: float = 0.2
+    plane_resolution: float = 0.4
     max_range: float = 100.0
 
     # Scan matching

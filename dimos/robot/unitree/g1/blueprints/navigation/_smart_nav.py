@@ -91,36 +91,36 @@ _smart_nav = autoconnect(
         terrain_voxel_size=1.0,  # grid cell size (m)
         terrain_voxel_half_width=10,  # grid radius in cells (→ 21×21)
         # Obstacle/ground classification
-        obstacle_height_thre=0.2,  # above this = hard obstacle (m)
-        ground_height_thre=0.1,  # below this = ground for cost mode (m)
+        obstacle_height_threshold=0.2,  # above this = hard obstacle (m)
+        ground_height_threshold=0.1,  # below this = ground for cost mode (m)
         vehicle_height=G1.height_clearance,  # ignore points above this (m)
-        min_rel_z=-1.5,  # height filter min relative to robot (m)
-        max_rel_z=1.5,  # height filter max relative to robot (m)
+        min_relative_z=-1.5,  # height filter min relative to robot (m)
+        max_relative_z=1.5,  # height filter max relative to robot (m)
         use_sorting=True,  # quantile-based ground estimation
         quantile_z=0.25,  # ground height quantile
         # Decay and clearing
         decay_time=2.0,  # point persistence (s)
-        no_decay_dis=1.5,  # no-decay radius around robot (m) — default 4.0, reduced to prevent unbounded growth when stationary
-        clearing_dis=8.0,  # dynamic clearing distance (m)
-        clear_dy_obs=True,  # clear dynamic obstacles
+        no_decay_distance=1.5,  # no-decay radius around robot (m) — default 4.0, reduced to prevent unbounded growth when stationary
+        clearing_distance=8.0,  # dynamic clearing distance (m)
+        clear_dynamic_obstacles=True,  # clear dynamic obstacles
         no_data_obstacle=False,  # treat unseen voxels as obstacles
-        no_data_block_skip_num=0,  # skip N blocks with no data
-        min_block_point_num=10,  # min points per block for classification
+        no_data_block_skip_count=0,  # skip N blocks with no data
+        min_block_point_count=10,  # min points per block for classification
         # Voxel culling
-        voxel_point_update_thre=30,  # reprocess voxel after N points (default 100)
-        voxel_time_update_thre=2.0,  # cull voxel after N seconds
+        voxel_point_update_threshold=30,  # reprocess voxel after N points (default 100)
+        voxel_time_update_threshold=2.0,  # cull voxel after N seconds
         # Dynamic obstacle filtering
-        min_dy_obs_dis=0.14,  # min distance for dynamic obstacle detection (m)
-        abs_dy_obs_rel_z_thre=0.2,  # z threshold for dynamic obstacles (m)
-        min_dy_obs_vfov=-55.0,  # min vertical FOV for dynamic obs (deg)
-        max_dy_obs_vfov=10.0,  # max vertical FOV for dynamic obs (deg)
-        min_dy_obs_point_num=1,  # min points for dynamic obstacle
-        min_out_of_fov_point_num=20,  # min out-of-FOV points
+        min_dynamic_obstacle_distance=0.14,  # min distance for dynamic obstacle detection (m)
+        abs_dynamic_obstacle_relative_z_threshold=0.2,  # z threshold for dynamic obstacles (m)
+        min_dynamic_obstacle_vfov=-55.0,  # min vertical FOV for dynamic obs (deg)
+        max_dynamic_obstacle_vfov=10.0,  # max vertical FOV for dynamic obs (deg)
+        min_dynamic_obstacle_point_count=1,  # min points for dynamic obstacle
+        min_out_of_fov_point_count=20,  # min out-of-FOV points
         # Ground lift limits
         consider_drop=False,  # consider terrain drops
         limit_ground_lift=False,  # limit ground plane lift
         max_ground_lift=0.15,  # max ground lift (m)
-        dis_ratio_z=0.2,  # distance-to-z ratio for filtering
+        distance_ratio_z=0.2,  # distance-to-z ratio for filtering
     ),
     TerrainMapExt.blueprint(
         voxel_size=0.4,  # meters per voxel (coarser than local terrain)
@@ -133,16 +133,16 @@ _smart_nav = autoconnect(
         use_terrain_analysis=True,
         max_speed=1.0,
         autonomy_speed=1.0,
-        obstacle_height_thre=0.2,
-        max_rel_z=1.5,
-        min_rel_z=-1.5,
+        obstacle_height_threshold=0.2,
+        max_relative_z=1.5,
+        min_relative_z=-1.5,
     ),
     PathFollower.blueprint(
         autonomy_mode=True,
         max_speed=1.0,
         autonomy_speed=1.0,
-        max_accel=2.0,
-        slow_dwn_dis_thre=0.2,
+        max_acceleration=2.0,
+        slow_down_distance_threshold=0.2,
     ),
     FarPlanner.blueprint(
         sensor_range=30.0,
@@ -171,24 +171,24 @@ _smart_nav = autoconnect(
 # ---------------------------------------------------------------------------
 _smart_nav_sim = autoconnect(
     TerrainAnalysis.blueprint(
-        obstacle_height_thre=0.2,
-        max_rel_z=1.5,
+        obstacle_height_threshold=0.2,
+        max_relative_z=1.5,
     ),
     TerrainMapExt.blueprint(),
     LocalPlanner.blueprint(
         autonomy_mode=True,
         max_speed=2.0,
         autonomy_speed=2.0,
-        obstacle_height_thre=0.2,
-        max_rel_z=1.5,
-        min_rel_z=-1.0,
+        obstacle_height_threshold=0.2,
+        max_relative_z=1.5,
+        min_relative_z=-1.0,
     ),
     PathFollower.blueprint(
         autonomy_mode=True,
         max_speed=2.0,
         autonomy_speed=2.0,
-        max_accel=4.0,
-        slow_dwn_dis_thre=0.2,
+        max_acceleration=4.0,
+        slow_down_distance_threshold=0.2,
     ),
     FarPlanner.blueprint(
         sensor_range=30.0,

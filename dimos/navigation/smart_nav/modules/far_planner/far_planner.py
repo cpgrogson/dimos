@@ -38,12 +38,14 @@ class FarPlannerConfig(NativeModuleConfig):
     )
 
     # C++ binary uses snake_case CLI args.
-    # (No cli_name_override needed — field names match C++ args directly.)
+    cli_name_override: dict[str, str] = {
+        "robot_dimension": "robot_dim",
+    }
 
     # Planner parameters
     visibility_range: float = 15.0
     update_rate: float = 2.0
-    robot_dim: float = 0.5
+    robot_dimension: float = 0.5
     sensor_range: float = 20.0
 
 
