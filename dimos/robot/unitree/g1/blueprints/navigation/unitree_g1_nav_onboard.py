@@ -49,7 +49,7 @@ from dimos.navigation.smart_nav.modules.pgo.pgo import PGO
 from dimos.robot.unitree.g1.blueprints.navigation._smart_nav import _rerun_config, _smart_nav
 from dimos.robot.unitree.g1.config import G1
 from dimos.robot.unitree.g1.effectors.high_level.dds_sdk import G1HighLevelDdsSdk
-from dimos.visualization.rerun.bridge import RerunBridgeModule, _resolve_viewer_mode
+from dimos.visualization.rerun.bridge import RerunBridgeModule
 from dimos.visualization.rerun.websocket_server import RerunWebSocketServer
 
 
@@ -100,7 +100,7 @@ unitree_g1_nav_onboard = (
         ),
         _smart_nav,
         G1HighLevelDdsSdk.blueprint(),
-        RerunBridgeModule.blueprint(viewer_mode=_resolve_viewer_mode(), **_onboard_rerun_config),
+        RerunBridgeModule.blueprint(**_onboard_rerun_config),
         RerunWebSocketServer.blueprint(),
     )
     .remappings(

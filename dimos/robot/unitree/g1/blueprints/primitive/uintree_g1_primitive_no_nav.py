@@ -155,7 +155,6 @@ uintree_g1_primitive_no_nav = (
             ("cmd_vel", Twist): LCMTransport("/cmd_vel", Twist),
             # State estimation from ROS
             ("state_estimation", Odometry): LCMTransport("/state_estimation", Odometry),
-            # Odometry output from ROSNavigationModule
             ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
             # Navigation module topics from nav_bot
             ("goal_req", PoseStamped): LCMTransport("/goal_req", PoseStamped),
