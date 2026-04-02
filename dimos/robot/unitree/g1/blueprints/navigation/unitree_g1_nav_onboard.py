@@ -141,13 +141,13 @@ unitree_g1_nav_onboard = (
         TerrainAnalysis.blueprint(
             extra_args=[
                 "--obstacleHeightThre",
-                "0.2",
+                "0.2", # meters
                 "--maxRelZ",
                 "1.5",
                 "--vehicleHeight",
-                "1.2",
+                "1.2", # meters 
                 "--voxelPointUpdateThre",
-                "30",
+                "5",  # cull points if theres more than 5 points in a voxel (terrain_map is the largest consumer of the network, this helps shrink the point cloud)
             ]
         ),
         TerrainMapExt.blueprint(),
