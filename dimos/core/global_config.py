@@ -13,14 +13,11 @@
 # limitations under the License.
 
 import re
-from typing import Literal, TypeAlias
+from dimos.visualization.constants import ViewerBackend, RerunOpenOption, RERUN_OPEN_DEFAULT, RERUN_ENABLE_WEB
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from dimos.models.vl.types import VlModelName
-
-ViewerBackend: TypeAlias = Literal["rerun", "rerun-web", "rerun-connect", "foxglove", "none"]
-
 
 def _get_all_numbers(s: str) -> list[float]:
     return [float(x) for x in re.findall(r"-?\d+\.?\d*", s)]
@@ -37,6 +34,8 @@ class GlobalConfig(BaseSettings):
     replay_dir: str = "go2_sf_office"
     new_memory: bool = False
     viewer: ViewerBackend = "rerun"
+    rerun_open: RerunOpenOption = RERUN_OPEN_DEFAULT
+    rerun_web: bool = RERUN_ENABLE_WEB
     n_workers: int = 2
     memory_limit: str = "auto"
     mujoco_camera_position: str | None = None
