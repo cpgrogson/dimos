@@ -363,6 +363,7 @@ class RerunBridgeModule(Module[Config]):
                 grpc_port=grpc_port,
                 server_memory_limit=self.config.memory_limit,
             )
+            rr.connect_grpc(self.config.connect_url)
             logger.info(f"Rerun gRPC server ready at {self.config.connect_url}")
         # "none" - just init, no viewer (connect externally)
 
