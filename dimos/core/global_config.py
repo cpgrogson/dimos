@@ -32,7 +32,7 @@ class GlobalConfig(BaseSettings):
     xarm7_ip: str | None = None
     xarm6_ip: str | None = None
     can_port: str | None = None
-    simulation: bool = False
+    simulation: str = ""
     replay: bool = False
     replay_dir: str = "go2_sf_office"
     new_memory: bool = False
@@ -70,12 +70,15 @@ class GlobalConfig(BaseSettings):
                 raise AttributeError(f"GlobalConfig has no field '{key}'")
             setattr(self, key, value)
 
+    dimsim_scene: str = "apt"
+    dimsim_port: int = 8090
+
     @property
     def unitree_connection_type(self) -> str:
         if self.replay:
             return "replay"
         if self.simulation:
-            return "mujoco"
+            return self.simulation
         return "webrtc"
 
     @property
