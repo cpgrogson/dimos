@@ -424,6 +424,8 @@ module = [
     "sqlite_vec",
     "std_msgs.*",
     "tf2_msgs.*",
+    "transformers",
+    "transformers.*",
     "torchreid",
     "turbojpeg",
     "ultralytics.*",

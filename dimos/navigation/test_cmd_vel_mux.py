@@ -16,7 +16,7 @@
 
 from __future__ import annotations
 
-from dimos.navigation.smart_nav.modules.cmd_vel_mux import CmdVelMux
+from dimos.navigation.cmd_vel_mux import CmdVelMux
 
 
 class TestCmdVelMux:
@@ -51,7 +51,7 @@ class TestCmdVelMux:
         assert mux._teleop_active  # Still active, nav was suppressed
 
     def test_cooldown_default(self) -> None:
-        from dimos.navigation.smart_nav.modules.cmd_vel_mux import CmdVelMuxConfig
+        from dimos.navigation.cmd_vel_mux import CmdVelMuxConfig
 
         config = CmdVelMuxConfig()
         assert config.teleop_cooldown_sec == 1.0

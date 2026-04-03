@@ -65,7 +65,6 @@ def _static_base_link(rr: Any) -> list[Any]:
         rr.Boxes3D(
             half_sizes=[0.35, 0.155, 0.2],
             colors=[(0, 255, 127)],
-            fill_mode="wireframe",
         ),
         rr.Transform3D(parent_frame="tf#/base_link"),
     ]
@@ -89,6 +88,8 @@ def _go2_rerun_blueprint() -> Any:
             ),
             column_shares=[1, 2],
         ),
+        rrb.TimePanel(state="hidden"),
+        rrb.SelectionPanel(state="hidden"),
     )
 
 

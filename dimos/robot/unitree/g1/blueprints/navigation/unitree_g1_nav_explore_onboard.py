@@ -40,7 +40,7 @@ from dimos.navigation.smart_nav.modules.tare_planner.tare_planner import TarePla
 from dimos.robot.unitree.g1.blueprints.navigation._smart_nav import _rerun_config, _smart_nav
 from dimos.robot.unitree.g1.config import G1
 from dimos.robot.unitree.g1.effectors.high_level.dds_sdk import G1HighLevelDdsSdk
-from dimos.visualization.rerun.bridge import RerunBridgeModule, _resolve_viewer_mode
+from dimos.visualization.rerun.bridge import RerunBridgeModule
 
 unitree_g1_nav_explore_onboard = (
     autoconnect(
@@ -55,7 +55,7 @@ unitree_g1_nav_explore_onboard = (
         TarePlanner.blueprint(),
         GlobalMap.blueprint(),
         G1HighLevelDdsSdk.blueprint(),
-        RerunBridgeModule.blueprint(viewer_mode=_resolve_viewer_mode(), **_rerun_config),
+        RerunBridgeModule.blueprint(**_rerun_config),
     )
     .remappings(
         [

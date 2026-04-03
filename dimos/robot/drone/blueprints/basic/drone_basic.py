@@ -72,9 +72,9 @@ if global_config.viewer == "foxglove":
 
     _vis = FoxgloveBridge.blueprint()
 elif global_config.viewer.startswith("rerun"):
-    from dimos.visualization.rerun.bridge import RerunBridgeModule, _resolve_viewer_mode
+    from dimos.visualization.rerun.bridge import RerunBridgeModule
 
-    _vis = RerunBridgeModule.blueprint(viewer_mode=_resolve_viewer_mode(), **_rerun_config)
+    _vis = RerunBridgeModule.blueprint(**_rerun_config)
 else:
     _vis = autoconnect()
 

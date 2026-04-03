@@ -31,6 +31,7 @@ Message format (newline-delimited JSON, ``"type"`` discriminant):
 
 import asyncio
 import json
+import logging
 import threading
 from typing import Any
 
@@ -73,7 +74,7 @@ class RerunWebSocketServer(Module[Config]):
     default_config = Config
 
     clicked_point: Out[PointStamped]
-    cmd_vel: Out[Twist]
+    tele_cmd_vel: Out[Twist]
     stop_movement: Out[Bool]
 
     def __init__(self, **kwargs: Any) -> None:
@@ -150,6 +151,12 @@ class RerunWebSocketServer(Module[Config]):
 
         self._stop_event = asyncio.Event()
 
+        # Suppress noisy tracebacks from non-WebSocket connections (e.g. port
+        # scanners, health checks, or accidental gRPC probes).  The library
+        # logs failed handshakes at ERROR level, so we need CRITICAL to hide them.
+        ws_logger = logging.getLogger("websockets.server")
+        ws_logger.setLevel(logging.CRITICAL)
+
         async with ws_server.serve(
             self._handle_client,
             host=self.config.host,
@@ -158,6 +165,7 @@ class RerunWebSocketServer(Module[Config]):
             # survive brief network hiccups while still detecting dead clients.
             ping_interval=30,
             ping_timeout=30,
+            logger=ws_logger,
         ):
             self._server_ready.set()
             await self._stop_event.wait()
@@ -218,12 +226,12 @@ class RerunWebSocketServer(Module[Config]):
             if not self._teleop_clients:
                 self.stop_movement.publish(Bool(data=True))
             self._teleop_clients.add(client_id)
-            self.cmd_vel.publish(twist)
+            self.tele_cmd_vel.publish(twist)
 
         elif msg_type == "stop":
             logger.debug("RerunWebSocketServer: stop")
             self._teleop_clients.discard(client_id)
-            self.cmd_vel.publish(Twist.zero())
+            self.tele_cmd_vel.publish(Twist.zero())
 
         elif msg_type == "heartbeat":
             logger.debug(f"RerunWebSocketServer: heartbeat ts={msg.get('timestamp_ms')}")
