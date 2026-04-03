@@ -136,7 +136,7 @@ class MujocoConnection:
             executable = sys.executable if sys.platform != "darwin" else "mjpython"
             env = os.environ.copy()
             if sys.platform == "darwin":
-                # on some systems mujoco looks in the wrong place for shared libraries. We 
+                # on some systems mujoco looks in the wrong place for shared libraries. So we force it look in the right place
                 libdir = Path(sysconfig.get_config_var("LIBDIR") or "")
                 if libdir.is_dir():
                     existing = env.get("DYLD_LIBRARY_PATH", "")
