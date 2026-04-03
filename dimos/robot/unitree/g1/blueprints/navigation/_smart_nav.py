@@ -38,7 +38,7 @@ from dimos.navigation.smart_nav.blueprints._rerun_helpers import (
     waypoint_override,
 )
 from dimos.navigation.smart_nav.modules.click_to_goal.click_to_goal import ClickToGoal
-from dimos.navigation.smart_nav.modules.cmd_vel_mux import CmdVelMux
+from dimos.navigation.cmd_vel_mux import CmdVelMux
 from dimos.navigation.smart_nav.modules.far_planner.far_planner import FarPlanner
 from dimos.navigation.smart_nav.modules.local_planner.local_planner import LocalPlanner
 from dimos.navigation.smart_nav.modules.path_follower.path_follower import PathFollower
