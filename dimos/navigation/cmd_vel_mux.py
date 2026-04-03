@@ -16,8 +16,8 @@
 
 Teleop (tele_cmd_vel) takes priority over autonomous navigation
 (nav_cmd_vel). When teleop is active, nav commands are suppressed
-and the planner's goal is cancelled. After a cooldown period with
-no teleop input, nav commands resume.
+and a stop_movement signal is published. After a cooldown period
+with no teleop input, nav commands resume.
 """
 
 from __future__ import annotations
@@ -25,11 +25,12 @@ from __future__ import annotations
 import threading
 from typing import Any
 
+from dimos_lcm.std_msgs import Bool
+
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.Twist import Twist
-from dimos.navigation.replanning_a_star.module_spec import ReplanningAStarPlannerSpec
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -42,13 +43,14 @@ class CmdVelMuxConfig(ModuleConfig):
 class CmdVelMux(Module[CmdVelMuxConfig]):
     """Multiplexes nav_cmd_vel and tele_cmd_vel into a single cmd_vel output.
 
-    When teleop input arrives, the planner's current goal is cancelled
-    so the robot responds immediately to manual control.
+    When teleop input arrives, stop_movement is published so downstream
+    modules (planner, explorer) can cancel their active goals.
 
     Ports:
         nav_cmd_vel (In[Twist]): Velocity from the autonomous planner.
         tele_cmd_vel (In[Twist]): Velocity from keyboard/joystick teleop.
         cmd_vel (Out[Twist]): Merged output — teleop wins when active.
+        stop_movement (Out[Bool]): Published when teleop begins.
     """
 
     default_config = CmdVelMuxConfig
@@ -56,8 +58,7 @@ class CmdVelMux(Module[CmdVelMuxConfig]):
     nav_cmd_vel: In[Twist]
     tele_cmd_vel: In[Twist]
     cmd_vel: Out[Twist]
-
-    _planner: ReplanningAStarPlannerSpec
+    stop_movement: Out[Bool]
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -110,11 +111,8 @@ class CmdVelMux(Module[CmdVelMuxConfig]):
             self._timer.start()
 
         if not was_active:
-            try:
-                self._planner.cancel_goal()
-                logger.info("Teleop active — cancelled planner goal")
-            except Exception:
-                logger.debug("Could not cancel planner goal", exc_info=True)
+            self.stop_movement.publish(Bool(data=True))
+            logger.info("Teleop active — published stop_movement")
 
         self.cmd_vel._transport.publish(msg)
 

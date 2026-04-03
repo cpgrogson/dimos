@@ -140,9 +140,7 @@ class MujocoConnection:
                 libdir = Path(sysconfig.get_config_var("LIBDIR") or "")
                 if libdir.is_dir():
                     existing = env.get("DYLD_LIBRARY_PATH", "")
-                    env["DYLD_LIBRARY_PATH"] = (
-                        f"{libdir}:{existing}" if existing else str(libdir)
-                    )
+                    env["DYLD_LIBRARY_PATH"] = f"{libdir}:{existing}" if existing else str(libdir)
 
             self.process = subprocess.Popen(
                 [executable, str(LAUNCHER_PATH), config_pickle, shm_names_json],

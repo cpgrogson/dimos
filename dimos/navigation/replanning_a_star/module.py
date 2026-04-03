@@ -75,9 +75,7 @@ class ReplanningAStarPlanner(Module, NavigationInterface):
         )
 
         if self.stop_movement.transport is not None:
-            self._disposables.add(
-                Disposable(self.stop_movement.subscribe(self._on_stop_movement))
-            )
+            self._disposables.add(Disposable(self.stop_movement.subscribe(self._on_stop_movement)))
 
         self._disposables.add(self._planner.path.subscribe(self.path.publish))
 
