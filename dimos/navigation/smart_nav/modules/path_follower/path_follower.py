@@ -50,6 +50,8 @@ class PathFollowerConfig(NativeModuleConfig):
         "autonomy_speed": "autonomySpeed",
         "max_acceleration": "maxAccel",
         "slow_down_distance_threshold": "slowDwnDisThre",
+        "omni_dir_goal_threshold": "omniDirGoalThre",
+        "omni_dir_diff_threshold": "omniDirDiffThre",
     }
 
     # --- Pure pursuit parameters ---
@@ -70,6 +72,11 @@ class PathFollowerConfig(NativeModuleConfig):
 
     # Vehicle kinematics model: "omniDir" for mecanum, "standard" for ackermann.
     vehicle_config: str = "omniDir"
+    # Omni-directional mode: distance threshold (m) below which the robot strafes
+    # instead of turning.  Set to 0 to disable omni mode (robot turns to face heading).
+    omni_dir_goal_threshold: float | None = None
+    # Omni-directional heading tolerance (rad).
+    omni_dir_diff_threshold: float | None = None
 
     # --- Mode flags ---
 
