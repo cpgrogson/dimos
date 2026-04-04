@@ -187,18 +187,19 @@ _smart_nav_sim = autoconnect(
         min_relative_z=-0.4,
         # Disable freeze logic for omni-dir robot — G1 can drive in any direction
         freeze_ang=180.0,
-
     ),
     PathFollower.blueprint(
         autonomy_mode=True,
         max_speed=2.0,
         autonomy_speed=2.0,
         max_acceleration=4.0,
-        slow_down_distance_threshold=1.0,
-        # Reference omniDir.yaml: omniDirGoalThre=0.5  dirDiffThre=0.3
-        # Robot should TURN TO FACE movement direction, not slide sideways.
-        # omni-dir strafe only when very close to goal (final positioning).
-        omni_dir_goal_threshold=0.5,
+        slow_down_distance_threshold=0.5,
+        # G1 is a true omni-directional robot — it can strafe at full speed.
+        # Set high threshold so it strafes toward the waypoint immediately
+        # instead of stopping to turn first (which costs 2+ seconds).
+        # dirDiff tolerance for omni mode (pi = any direction).
+        omni_dir_goal_threshold=100.0,
+        omni_dir_diff_threshold=3.14,
     ),
     FarPlanner.blueprint(
         sensor_range=15.0,
