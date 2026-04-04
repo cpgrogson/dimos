@@ -82,14 +82,19 @@ def path_override(path_msg: Any) -> Any:
 
 
 def goal_path_override(path_msg: Any) -> Any:
-    """Render the goal line (robot→goal) as a bright dashed line in world frame."""
+    """Render FAR planner's planned path: orange line + yellow node markers."""
     import rerun as rr
 
     if not path_msg.poses or len(path_msg.poses) < 2:
         return None
 
     points = [[p.x, p.y, p.z] for p in path_msg.poses]
-    return rr.LineStrips3D([points], colors=[(255, 100, 50)], radii=0.03)
+    return [
+        # Edges: orange line connecting all waypoints
+        ("world/goal_path/edges", rr.LineStrips3D([points], colors=[(255, 140, 0)], radii=0.04)),
+        # Nodes: yellow spheres at each graph node in the path
+        ("world/goal_path/nodes", rr.Points3D(points, colors=[(255, 255, 0)], radii=0.12)),
+    ]
 
 
 def waypoint_override(msg: Any) -> Any:

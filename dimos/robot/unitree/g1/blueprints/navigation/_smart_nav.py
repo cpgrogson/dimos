@@ -185,8 +185,10 @@ _smart_nav_sim = autoconnect(
         # sees walls from floor to ceiling and treats doorways as impassable.
         max_relative_z=0.3,
         min_relative_z=-0.4,
-        # Disable freeze logic for omni-dir robot — G1 can drive in any direction
+        # Disable freeze logic — robot turns to face goal then drives forward.
         freeze_ang=180.0,
+        # Disable backward driving — robot must turn to face goal first.
+        two_way_drive=False,
     ),
     PathFollower.blueprint(
         autonomy_mode=True,
@@ -194,16 +196,16 @@ _smart_nav_sim = autoconnect(
         autonomy_speed=2.0,
         max_acceleration=4.0,
         slow_down_distance_threshold=0.5,
-        # G1 is a true omni-directional robot — it can strafe at full speed.
-        # Set high threshold so it strafes toward the waypoint immediately
-        # instead of stopping to turn first (which costs 2+ seconds).
-        # dirDiff tolerance for omni mode (pi = any direction).
-        omni_dir_goal_threshold=100.0,
-        omni_dir_diff_threshold=3.14,
+        # Robot should TURN to face the goal direction, then drive FORWARD.
+        # Low threshold = only strafe when very close to the waypoint.
+        omni_dir_goal_threshold=0.5,
+        # Disable backward driving — robot turns to face heading first.
+        two_way_drive=False,
     ),
     FarPlanner.blueprint(
         sensor_range=15.0,
         is_static_env=True,
+        converge_dist=1.5,
     ),
     PGO.blueprint(),
     ClickToGoal.blueprint(),

@@ -52,6 +52,7 @@ class PathFollowerConfig(NativeModuleConfig):
         "slow_down_distance_threshold": "slowDwnDisThre",
         "omni_dir_goal_threshold": "omniDirGoalThre",
         "omni_dir_diff_threshold": "omniDirDiffThre",
+        "two_way_drive": "twoWayDrive",
     }
 
     # --- Pure pursuit parameters ---
@@ -86,6 +87,12 @@ class PathFollowerConfig(NativeModuleConfig):
     autonomy_mode: bool | None = None
     # Velocity cap during autonomous navigation (m/s).
     autonomy_speed: float | None = None
+
+    # --- Drive direction ---
+
+    # Allow driving in reverse (two-way drive).  Set to False to force the
+    # robot to turn and face the goal before driving forward.
+    two_way_drive: bool | None = None
 
     # --- Acceleration / slowdown ---
 

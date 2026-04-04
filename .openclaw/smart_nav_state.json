@@ -1,56 +1,10 @@
 {
-  "status": "completed",
-  "timestamp": "2026-04-04T15:45:00Z",
-  "environment_map": {
-    "building": "home_building_1",
-    "coordinate_system": "Unity XY ground plane, Z height",
-    "robot_spawn": [0, 0, 1.24],
-    "notes": "X=right, Y=up in diagram",
-    "walls": {
-      "housewall": {"position": [4.39, 0.13], "note": "main vertical wall divider lower section"},
-      "woodwall": {"position": [4.28, 4.11], "note": "vertical wall divider upper section"},
-      "TVwall": {"position": [7.94, -3.50]},
-      "wall_divider_x": 4.3,
-      "wall_divider_y_range": [-5, 4],
-      "doorway": {"x": 4.3, "y_range": [-7, -5], "note": "doorframe/roomdoor area"}
-    },
-    "test_points": {
-      "S": [0, 0],
-      "p0": [-6, 0],
-      "p1": [2.0, 3.0],
-      "p2": [6.5, 3.0]
-    }
-  },
-  "p0_test": {
-    "goal": [-6, 0, 1.24],
-    "result": "PASS",
-    "time_seconds": 5.74,
-    "target_seconds": 7.0,
-    "notes": "Fresh sim, omniDir=100 config. No reprojection with fresh contour data.",
-    "fix_applied": "PathFollower omni_dir_goal_threshold=100.0, omni_dir_diff_threshold=3.14"
-  },
-  "p1_p2_test": {
-    "status": "PARTIAL_PASS",
-    "p1_actual": [1.19, 1.94],
-    "p2_target": [6.5, 3.0],
-    "p2_reached": [7.51, 0.97],
-    "wall_x": 4.3,
-    "cross_wall_routing": "SUCCESS - robot crossed from left room (X<4.3) to right room (X>4.3)",
-    "notes": [
-      "Robot successfully routed through doorway between rooms",
-      "Final positioning failed due to furniture obstacles near sofa at (6.39, 3.31)",
-      "Goal (6.5, 3.0) was reprojected to (7.17, 3.59) due to furniture",
-      "Robot oscillated near goal unable to find clear approach path"
-    ]
-  },
-  "summary": {
-    "p0_test": "PASS - 3.69 seconds (target 7s)",
-    "cross_wall_routing": "PASS - robot navigated through doorway between rooms",
-    "final_approach_to_p2": "FAIL - stuck 2.6m from goal due to furniture obstacles",
-    "fixes_applied": [
-      "PathFollower omni_dir_goal_threshold=100.0 for immediate strafing",
-      "PathFollower omni_dir_diff_threshold=3.14 for full omni-directional movement",
-      "PathFollower slow_down_distance_threshold=0.5"
-    ]
-  }
+  "phase": "p3→p1 fix - final approach",
+  "status": "working",
+  "p0_time": 1.2,
+  "p1_reached": true,
+  "p2_reached": true,
+  "p3_reached": true,
+  "p3_to_p1_passed": false,
+  "notes": "p0-p3 all pass. p3→p1: robot routes correctly through doorway but stops 1m from goal (furniture). Need to increase wait times and ensure robot reaches p3 before sending p1. Also need to check goal_reached_threshold."
 }

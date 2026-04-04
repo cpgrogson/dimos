@@ -27,6 +27,7 @@ from dimos.core.native_module import NativeModule, NativeModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.PointStamped import PointStamped
 from dimos.msgs.nav_msgs.Odometry import Odometry
+from dimos.msgs.nav_msgs.Path import Path as NavPath
 from dimos.msgs.sensor_msgs.PointCloud2 import PointCloud2
 
 _MODULE_DIR = str(Path(__file__).resolve().parent)
@@ -79,3 +80,4 @@ class FarPlanner(NativeModule):
     odometry: In[Odometry]
     goal: In[PointStamped]
     way_point: Out[PointStamped]
+    goal_path: Out[NavPath]
