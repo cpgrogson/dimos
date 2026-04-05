@@ -229,15 +229,15 @@ class SmoothLocalPlannerConfig(ModuleConfig):
     arc_step: float = 0.15  # m between arc samples
 
     # Scoring weights (scores are pre-normalized to ~[0,1])
-    clearance_weight: float = 1.0
-    alignment_weight: float = 1.2
-    hysteresis_weight: float = 0.6
+    clearance_weight: float = 2.0
+    alignment_weight: float = 1.0
+    hysteresis_weight: float = 0.4
     hysteresis_sigma: float = 0.4
     clearance_cap: float = 1.5
 
     # Safety
-    robot_radius: float = 0.35
-    obstacle_range: float = 3.5
+    robot_radius: float = 0.50
+    obstacle_range: float = 4.0
     obstacle_height_threshold: float = 0.15
     max_relative_z: float = 1.5
     min_relative_z: float = -1.5
@@ -251,6 +251,20 @@ class SmoothLocalPlannerConfig(ModuleConfig):
     # Temporal filter
     curvature_ema_alpha: float = 0.3
     blocked_speed_scale: float = 0.3
+
+    # Goal proximity
+    goal_stop_radius: float = 0.5  # m; publish a stop-pose when this close.
+    # When the goal bearing exceeds this angle, the goal is "behind" and
+    # we publish a short turn-in-place nudge instead of a forward arc.
+    turn_in_place_bearing: float = 1.3  # rad (~75°)
+    turn_in_place_length: float = 0.3  # m; tiny nudge arc for pivoting
+
+    # Churn-based speed scaling: track |Δκ| with EMA; when it exceeds
+    # ``churn_threshold``, scale down the published arc length toward
+    # ``churn_min_scale`` so path_follower naturally slows.
+    churn_alpha: float = 0.3  # EMA smoothing for |Δκ|
+    churn_threshold: float = 0.15  # κ/tick; above this = high churn
+    churn_min_scale: float = 0.3  # floor scale at extreme churn
 
     # Publishing
     publish_rate: float = 20.0
@@ -299,6 +313,9 @@ class SmoothLocalPlanner(Module[SmoothLocalPlannerConfig]):
         self._build_arc_cache()
 
         self._prev_kappa_ema = 0.0
+        # Churn tracker: EMA of |Δκ| between consecutive ticks.
+        # High churn → shorten the published arc so path_follower slows.
+        self._kappa_delta_ema = 0.0
 
         # State (world frame unless noted)
         self._robot_x = 0.0
@@ -475,6 +492,49 @@ class SmoothLocalPlanner(Module[SmoothLocalPlannerConfig]):
         goal_bearing = math.atan2(gy_v, gx_v)
         goal_dist = math.hypot(gx_v, gy_v)
 
+        now = time.time()
+
+        # ── Close-to-goal: stop. Publish a single pose at the robot's
+        # current position so path_follower decelerates to zero.
+        if goal_dist < cfg.goal_stop_radius:
+            self._prev_kappa_ema = 0.0
+            self._kappa_delta_ema = 0.0
+            poses = [
+                PoseStamped(
+                    ts=now,
+                    frame_id=cfg.frame_id,
+                    position=[0.0, 0.0, 0.0],
+                    orientation=[0.0, 0.0, 0.0, 1.0],
+                )
+            ]
+            self.path.publish(Path(ts=now, frame_id=cfg.frame_id, poses=poses))
+            self._maybe_publish_obstacle_cloud(obstacles, now)
+            return
+
+        # ── Goal behind: turn-in-place. Arc candidates are all
+        # forward-facing and can't represent a 180° pivot. Publish a
+        # short nudge arc toward the goal side so path_follower turns
+        # the robot without driving forward into a wall.
+        if abs(goal_bearing) > cfg.turn_in_place_bearing:
+            turn_kappa = math.copysign(cfg.max_curvature, goal_bearing)
+            self._prev_kappa_ema = update_ema(
+                self._prev_kappa_ema, turn_kappa, cfg.curvature_ema_alpha
+            )
+            arc = generate_arc(turn_kappa, cfg.turn_in_place_length, cfg.arc_step)
+            poses = [
+                PoseStamped(
+                    ts=now,
+                    frame_id=cfg.frame_id,
+                    position=[float(arc[i, 0]), float(arc[i, 1]), 0.0],
+                    orientation=[0.0, 0.0, 0.0, 1.0],
+                )
+                for i in range(arc.shape[0])
+            ]
+            self.path.publish(Path(ts=now, frame_id=cfg.frame_id, poses=poses))
+            self._maybe_publish_obstacle_cloud(obstacles, now)
+            return
+
+        # ── Normal forward planning ──
         raw_kappa, all_blocked, _best_idx = select_curvature(
             obstacles,
             goal_bearing,
@@ -489,21 +549,26 @@ class SmoothLocalPlanner(Module[SmoothLocalPlannerConfig]):
             hysteresis_sigma=cfg.hysteresis_sigma,
         )
 
+        # ── Churn tracking: when the chosen curvature flips rapidly,
+        # shorten the published arc so the robot slows down.
+        kappa_delta = abs(raw_kappa - self._prev_kappa_ema)
+        self._kappa_delta_ema = update_ema(self._kappa_delta_ema, kappa_delta, cfg.churn_alpha)
+        if self._kappa_delta_ema > cfg.churn_threshold:
+            # Linear ramp from 1.0 → churn_min_scale as churn grows
+            excess = (self._kappa_delta_ema - cfg.churn_threshold) / cfg.churn_threshold
+            churn_scale = max(cfg.churn_min_scale, 1.0 - excess * (1.0 - cfg.churn_min_scale))
+        else:
+            churn_scale = 1.0
+
         self._prev_kappa_ema = update_ema(self._prev_kappa_ema, raw_kappa, cfg.curvature_ema_alpha)
 
         path_scale_down = cfg.blocked_speed_scale if all_blocked else 1.0
-        # Never publish past the goal — path_follower treats the last
-        # path pose as the target and decelerates toward it. If we
-        # overshoot, the robot keeps accelerating then has to turn
-        # around. Cap final arc length by the vehicle-frame goal
-        # distance so the path ends at (or before) the goal.
-        final_length = min(cfg.publish_length, goal_dist) * path_scale_down
-        # Keep a floor so the arc has at least a couple of samples even
-        # on the last tick before the path_follower declares "reached".
-        final_length = max(final_length, cfg.arc_step * 2.0)
+        # Never publish past the goal; apply churn scale.
+        final_length = min(cfg.publish_length, goal_dist) * path_scale_down * churn_scale
+        # Floor: at least one arc_step so path has 2+ samples
+        final_length = max(final_length, cfg.arc_step)
         final_arc = generate_arc(self._prev_kappa_ema, final_length, cfg.arc_step)
 
-        now = time.time()
         poses: list[PoseStamped] = []
         for i in range(final_arc.shape[0]):
             poses.append(

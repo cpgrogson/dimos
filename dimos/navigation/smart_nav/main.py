@@ -262,6 +262,7 @@ def smart_nav_rerun_config(
     visual_override.setdefault("world/trajectory", _trajectory_override)
     visual_override.setdefault("world/path", _path_override)
     visual_override.setdefault("world/way_point", _waypoint_override)
+    visual_override.setdefault("world/goal", _goal_override)
     visual_override.setdefault("world/goal_path", _goal_path_override)
     visual_override.setdefault("world/obstacle_cloud", _obstacle_cloud_override)
     visual_override.setdefault("world/costmap_cloud", _costmap_cloud_override)
@@ -281,14 +282,8 @@ def _default_rerun_blueprint() -> Any:
 
 
 def _sensor_scan_override(cloud: Any) -> Any:
-    """Render sensor_scan attached to the sensor TF frame so it moves with the robot."""
-    import rerun as rr
-
-    arch = cloud.to_rerun(colormap="turbo", size=0.02)
-    return [
-        ("world/sensor_scan", rr.Transform3D(parent_frame="tf#/sensor")),
-        ("world/sensor_scan", arch),
-    ]
+    """Hide sensor_scan — it clutters the view with raw lidar returns."""
+    return None
 
 
 def _global_map_override(cloud: Any) -> Any:
@@ -426,6 +421,22 @@ def _waypoint_override(msg: Any) -> Any:
         positions=[[msg.x, msg.y, msg.z + 0.5]],
         colors=[(255, 50, 50)],
         radii=0.3,
+    )
+
+
+def _goal_override(msg: Any) -> Any:
+    """Render the current navigation goal as a large purple sphere."""
+    import math
+
+    import rerun as rr
+
+    if not all(math.isfinite(v) for v in (msg.x, msg.y, msg.z)):
+        return None
+
+    return rr.Points3D(
+        positions=[[msg.x, msg.y, msg.z + 0.5]],
+        colors=[(180, 60, 220)],
+        radii=0.6,
     )
 
 

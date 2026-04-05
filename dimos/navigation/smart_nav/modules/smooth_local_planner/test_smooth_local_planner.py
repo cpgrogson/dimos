@@ -32,11 +32,11 @@ from dimos.navigation.smart_nav.modules.smooth_local_planner.smooth_local_planne
 
 # Shared defaults for score weights
 _SCORE_KW = dict(
-    robot_radius=0.35,
+    robot_radius=0.50,
     clearance_cap=1.5,
-    clearance_weight=1.0,
-    alignment_weight=1.2,
-    hysteresis_weight=0.6,
+    clearance_weight=2.0,
+    alignment_weight=1.0,
+    hysteresis_weight=0.4,
     hysteresis_sigma=0.4,
 )
 
@@ -48,13 +48,13 @@ class _Cfg:
     max_curvature = 1.5
     arc_length = 3.0
     arc_step = 0.15
-    clearance_weight = 1.0
-    alignment_weight = 1.2
-    hysteresis_weight = 0.6
+    clearance_weight = 2.0
+    alignment_weight = 1.0
+    hysteresis_weight = 0.4
     hysteresis_sigma = 0.4
     clearance_cap = 1.5
-    robot_radius = 0.35
-    obstacle_range = 3.5
+    robot_radius = 0.50
+    obstacle_range = 4.0
     obstacle_height_threshold = 0.15
     max_relative_z = 1.5
     min_relative_z = -1.5
@@ -178,7 +178,7 @@ class TestScoreCandidate:
 
     def test_closer_obstacle_lower_clearance(self) -> None:
         arc = generate_arc(0.0, 3.0, 0.15)
-        near = np.array([[1.5, 0.4]])
+        near = np.array([[1.5, 0.6]])
         far = np.array([[1.5, 2.0]])
         _, blocked_n, clr_n = score_candidate(
             arc, near, goal_bearing=0.0, prev_kappa=0.0, kappa=0.0, **_SCORE_KW
@@ -240,8 +240,8 @@ class TestSelectCurvature:
 
     def test_wall_ahead_deflects(self) -> None:
         kappas, arcs = self._setup()
-        # Wall segment dead-ahead 1m away
-        wall = np.array([[1.0, y] for y in np.linspace(-0.5, 0.5, 11)])
+        # Wall segment dead-ahead 2m away, wide enough to block straight
+        wall = np.array([[2.0, y] for y in np.linspace(-0.5, 0.5, 11)])
         raw, blocked, _ = select_curvature(
             wall,
             goal_bearing=0.0,
