@@ -110,9 +110,14 @@ class TestCrossWallPlanningSimple:
                     simple_planner={
                         "cell_size": 0.3,
                         "obstacle_height_threshold": 0.15,
-                        "inflation_radius": 0.3,
+                        "inflation_radius": 0.7,
                         "lookahead_distance": 2.0,
                         "replan_rate": 5.0,
+                        # Tighten stuck-detection for the test so doorways
+                        # that the wider inflation blocks get opened up
+                        # within a few seconds of non-progress.
+                        "stuck_seconds": 4.0,
+                        "stuck_shrink_factor": 0.5,
                     },
                 ),
             )

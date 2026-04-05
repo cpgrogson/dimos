@@ -73,7 +73,7 @@ unitree_g1_nav_sim_simple = (
             simple_planner={
                 "cell_size": 0.3,
                 "obstacle_height_threshold": 0.15,
-                "inflation_radius": 0.3,
+                "inflation_radius": 0.1,
                 "lookahead_distance": 2.0,
                 "replan_rate": 5.0,
             },

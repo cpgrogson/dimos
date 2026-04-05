@@ -185,8 +185,13 @@ def smart_nav(
         modules.append(
             TerrainMapExt.blueprint(
                 **{
-                    "voxel_size": 0.4,
-                    "decay_time": 8.0,
+                    "voxel_size": 0.3,
+                    # Walls are static — keep them around long enough that
+                    # a global planner (SimplePlanner / FarPlanner) doesn't
+                    # see freshly-empty cells behind the robot and route
+                    # paths straight through the walls it can't currently
+                    # see. 8 s was way too aggressive for that.
+                    "decay_time": 300.0,
                     "publish_rate": 2.0,
                     "max_range": 40.0,
                     **(terrain_map_ext or {}),
@@ -248,6 +253,7 @@ def smart_nav_rerun_config(
     visual_override.setdefault("world/way_point", _waypoint_override)
     visual_override.setdefault("world/goal_path", _goal_path_override)
     visual_override.setdefault("world/obstacle_cloud", _obstacle_cloud_override)
+    visual_override.setdefault("world/costmap_cloud", _costmap_cloud_override)
     resolved["visual_override"] = visual_override
     static_entries = dict(resolved["static"])
     static_entries.setdefault("world/floor", _static_floor)
@@ -304,6 +310,21 @@ def _terrain_map_override(cloud: Any) -> Any:
     colors[:, 2] = 30
 
     return rr.Points3D(positions=points[:, :3], colors=colors, radii=0.08)
+
+
+def _costmap_cloud_override(cloud: Any) -> Any:
+    """Render SimplePlanner's costmap_cloud — the blocked grid cells
+    (with inflation) that A* actually treats as obstacles. Big red
+    boxes so they pop against the terrain clouds.
+    """
+    import numpy as np
+    import rerun as rr
+
+    points, _ = cloud.as_numpy()
+    if len(points) == 0:
+        return None
+    colors = np.full((len(points), 3), [255, 40, 40], dtype=np.uint8)
+    return rr.Points3D(positions=points[:, :3], colors=colors, radii=0.12)
 
 
 def _obstacle_cloud_override(cloud: Any) -> Any:
