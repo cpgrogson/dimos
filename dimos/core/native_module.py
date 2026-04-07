@@ -85,12 +85,17 @@ class NativeModuleConfig(ModuleConfig):
 
     # Override in subclasses to exclude fields from CLI arg generation
     cli_exclude: frozenset[str] = frozenset({"rebuild_on_change"})
+    # Override in subclasses to map field names to custom CLI arg names
+    # (bypasses the automatic snake_case passthrough).
+    cli_name_override: dict[str, str] = Field(default_factory=dict)
 
     def to_cli_args(self) -> list[str]:
         """Auto-convert subclass config fields to CLI args.
 
         Iterates fields defined on the concrete subclass (not NativeModuleConfig
         or its parents) and converts them to ``["--name", str(value)]`` pairs.
+        Field names are passed as-is (snake_case) unless overridden via
+        ``cli_name_override``.
         Skips fields whose values are ``None`` and fields in ``cli_exclude``.
         """
         ignore_fields = {f for f in NativeModuleConfig.model_fields}
@@ -103,12 +108,13 @@ class NativeModuleConfig(ModuleConfig):
             val = getattr(self, f)
             if val is None:
                 continue
+            cli_name = self.cli_name_override.get(f, f)
             if isinstance(val, bool):
-                args.extend([f"--{f}", str(val).lower()])
+                args.extend([f"--{cli_name}", str(val).lower()])
             elif isinstance(val, list):
-                args.extend([f"--{f}", ",".join(str(v) for v in val)])
+                args.extend([f"--{cli_name}", ",".join(str(v) for v in val)])
             else:
-                args.extend([f"--{f}", str(val)])
+                args.extend([f"--{cli_name}", str(val)])
         return args
 
 
