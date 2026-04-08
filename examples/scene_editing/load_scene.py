@@ -13,15 +13,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Load a full GLB scene with physics colliders."""
+"""Load a GLB scene with physics colliders.
+
+Usage:
+    python load_scene.py /path/to/scene.glb
+
+Try it:
+    Sketchfab: https://sketchfab.com/3d-models/lowpoly-fps-tdm-game-map-by-resoforge-d41a19f699ea421a9aa32b407cb7537b
+"""
+
+import sys
 
 from dimos.robot.sim.scene_client import SceneClient
 
-COLLISION_WORLD = "/proxy?url=https://threejs.org/examples/models/gltf/collision-world.glb"
+if len(sys.argv) < 2:
+    print("Usage: python load_scene.py /path/to/scene.glb")
+    sys.exit(1)
+
+glb_path = sys.argv[1]
 
 with SceneClient() as scene:
+    url = scene.upload_asset(glb_path)
     result = scene.load_map(
-        url=COLLISION_WORLD,
+        url=url,
         name="environment",
         collider="trimesh",
     )

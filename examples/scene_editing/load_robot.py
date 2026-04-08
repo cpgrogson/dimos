@@ -23,5 +23,5 @@ with SceneClient() as scene:
     print(f"Switched to drone: {cfg}")
 
     # Or override params
-    cfg = scene.set_embodiment("unitree-go2", walk_speed=4.0)
+    cfg = scene.set_embodiment("unitree-go2", max_speed=4.0)
     print(f"Go2 with speed 4: {cfg}")

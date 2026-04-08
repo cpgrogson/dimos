@@ -13,16 +13,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Add an object to the running scene."""
+"""Load a GLB/GLTF object into the scene.
+
+Usage:
+    python load_object.py /path/to/model.glb
+
+Try it:
+    Avocado: https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/Avocado/glTF-Binary/Avocado.glb
+"""
+
+import sys
 
 from dimos.robot.sim.scene_client import SceneClient
 
+if len(sys.argv) < 2:
+    print("Usage: python load_object.py /path/to/model.glb")
+    sys.exit(1)
+
+glb_path = sys.argv[1]
+
 with SceneClient() as scene:
-    scene.add_object(
-        "box",
-        size=(1, 0.5, 1),
-        color=0x8B4513,
-        position=(3, 0.25, 2),
-        name="crate",
-    )
-    print("Object added")
+    url = scene.upload_asset(glb_path)
+    result = scene.exec(f"""
+        const gltf = await loadGLTF("{url}");
+        const model = gltf.scene;
+        model.name = "loaded-object";
+        model.position.set(2, 0.5, 2);
+        model.traverse(c => {{ if (c.isMesh) {{ c.castShadow = true; c.receiveShadow = true; }} }});
+        autoScale(model);
+        scene.add(model);
+        addCollider(model, "trimesh");
+        return {{ name: model.name, uuid: model.uuid }};
+    """)
+    print(f"Object loaded: {result}")

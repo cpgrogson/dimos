@@ -264,10 +264,34 @@ See `examples/scene_editing/`:
 
 | Script | Description |
 |---|---|
-| `load_object.py` | Add an object to the scene |
-| `load_scene.py` | Load a full GLB scene with colliders |
-| `remove_object.py` | Remove a named object |
-| `load_robot.py` | Swap robot embodiment |
+| Example | Status | Description |
+|---|---|---|
+| `load_object.py` | Ready | Load a GLB object ([Avocado sample](https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/Avocado/glTF/Avocado.gltf) by default) |
+| `load_custom_object.py` | Ready | Create objects from code (box, sphere with physics) |
+| `load_scene.py` | Template | Load a full GLB scene — update `GLB_PATH` to your file |
+| `remove_object.py` | Ready | Remove a named object |
+| `load_robot.py` | Ready | Swap robot embodiment (drone, Go2) |
+
+Run any example while a sim is running:
+
+```bash
+# Terminal 1
+DIMSIM_LOCAL=1 dimos --simulation run sim-nav
+
+# Terminal 2
+python examples/scene_editing/load_object.py
+python examples/scene_editing/load_robot.py
+```
+
+Both `load_object.py` and `load_scene.py` take a local file path as argument. Download a `.glb` model and pass the path:
+
+- [Avocado (GitHub)](https://github.com/KhronosGroup/glTF-Sample-Models/blob/main/2.0/Avocado/glTF-Binary/Avocado.glb) — small test object
+- [TDM Game Map (Sketchfab)](https://sketchfab.com/3d-models/lowpoly-fps-tdm-game-map-by-resoforge-d41a19f699ea421a9aa32b407cb7537b) — full scene
+
+```bash
+python examples/scene_editing/load_object.py ~/Downloads/Avocado.glb
+python examples/scene_editing/load_scene.py ~/Downloads/scene.glb
+```
 
 ## Tests
 
