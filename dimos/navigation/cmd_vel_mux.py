@@ -28,6 +28,7 @@ import weakref
 
 from dimos_lcm.std_msgs import Bool
 
+from dimos.constants import DEFAULT_THREAD_JOIN_TIMEOUT
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
@@ -38,8 +39,8 @@ logger = setup_logger()
 
 
 class CmdVelMuxConfig(ModuleConfig):
-    teleop_cooldown_sec: float = 1.0
-    teleop_linear_scale: float = 1.0
+    tele_cooldown_sec: float = 1.0
+    tele_linear_scale: float = 1.0
 
 
 class CmdVelMux(Module):
@@ -47,12 +48,22 @@ class CmdVelMux(Module):
 
     When teleop input arrives, stop_movement is published so downstream
     modules (planner, explorer) can cancel their active goals.
+    
+    config.tele_cooldown_sec
+        nav_cmd_vel will be ignored for tele_cooldown_sec seconds after
+        the last teleop command
+        
+        dev notes: each new tele_cmd_vel message restarts the cooldown
+        so under continuous teleop (e.g. 50 Hz joystick) the cooldown
+        is never actually reached; it only fires once the operator stops.
 
     Ports:
         nav_cmd_vel (In[Twist]): Velocity from the autonomous planner.
         tele_cmd_vel (In[Twist]): Velocity from keyboard/joystick teleop.
         cmd_vel (Out[Twist]): Merged output — teleop wins when active.
-        stop_movement (Out[Bool]): Published when teleop begins.
+        stop_movement (Out[Bool]): Published once per cooldown window, on
+            the first teleop message; downstream nav modules should cancel
+            their active goal when they see it.
     """
 
     config: CmdVelMuxConfig
@@ -67,6 +78,10 @@ class CmdVelMux(Module):
         self._teleop_active = False
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
+        # Monotonic token identifying the current cooldown timer. Each new
+        # _on_teleop bumps this; _end_teleop short-circuits if its captured
+        # generation doesn't match — a cheap fix for stale Timer callbacks.
+        self._timer_gen = 0
 
     def __getstate__(self) -> dict[str, Any]:
         state: dict[str, Any] = super().__getstate__()  # type: ignore[no-untyped-call]
@@ -78,6 +93,7 @@ class CmdVelMux(Module):
         super().__setstate__(state)
         self._lock = threading.Lock()
         self._timer = None
+        self._timer_gen = 0
 
     def __del__(self) -> None:
         # Cancel any pending cooldown timer so the daemon thread doesn't
@@ -85,16 +101,18 @@ class CmdVelMux(Module):
         timer = getattr(self, "_timer", None)
         if timer is not None:
             timer.cancel()
-            timer.join(timeout=1.0)
+            timer.join(timeout=DEFAULT_THREAD_JOIN_TIMEOUT)
 
     @rpc
     def start(self) -> None:
-        self.nav_cmd_vel.subscribe(self._on_nav)
-        self.tele_cmd_vel.subscribe(self._on_teleop)
+        super().start()
+        self.register_disposable(self.nav_cmd_vel.subscribe(self._on_nav))
+        self.register_disposable(self.tele_cmd_vel.subscribe(self._on_teleop))
 
     @rpc
     def stop(self) -> None:
         with self._lock:
+            self._timer_gen += 1  # invalidate any pending _end_teleop
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
@@ -112,22 +130,24 @@ class CmdVelMux(Module):
             was_active = self._teleop_active
             self._teleop_active = True
             if self._timer is not None:
+                # Cancel + join so the superseded Timer thread exits promptly
+                # rather than accumulating under rapid teleop (50 Hz) and
+                # tripping pytest's thread-leak detector.
                 self._timer.cancel()
-            # Use a weakref for the Timer target so the Timer thread doesn't
-            # keep the mux alive via the bound `_end_teleop` method. Without
-            # this, `mux → _timer → bound method → mux` forms a refcount cycle
-            # that prevents __del__ from running at test scope exit.
+                self._timer.join(timeout=DEFAULT_THREAD_JOIN_TIMEOUT)
+            self._timer_gen += 1
+            my_gen = self._timer_gen
+            # weakref prevents the Timer thread from keeping the mux alive
+            # via a bound-method reference — otherwise mux.__del__ can't
+            # run at test scope exit.
             self_ref = weakref.ref(self)
 
             def _end() -> None:
                 obj = self_ref()
                 if obj is not None:
-                    obj._end_teleop()
+                    obj._end_teleop(my_gen)
 
-            self._timer = threading.Timer(
-                self.config.teleop_cooldown_sec,
-                _end,
-            )
+            self._timer = threading.Timer(self.config.tele_cooldown_sec, _end)
             self._timer.daemon = True
             self._timer.start()
 
@@ -135,7 +155,7 @@ class CmdVelMux(Module):
             self.stop_movement.publish(Bool(data=True))
             logger.info("Teleop active — published stop_movement")
 
-        s = self.config.teleop_linear_scale
+        s = self.config.tele_linear_scale
         if s != 1.0:
             msg = Twist(
                 linear=[msg.linear.x * s, msg.linear.y * s, msg.linear.z],
@@ -143,7 +163,10 @@ class CmdVelMux(Module):
             )
         self.cmd_vel.publish(msg)
 
-    def _end_teleop(self) -> None:
+    def _end_teleop(self, expected_gen: int) -> None:
         with self._lock:
+            if expected_gen != self._timer_gen:
+                # Superseded by a newer timer (or cleared by stop()).
+                return
             self._teleop_active = False
             self._timer = None
