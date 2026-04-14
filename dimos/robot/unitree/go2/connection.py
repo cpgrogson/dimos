@@ -19,6 +19,7 @@ import time
 from typing import TYPE_CHECKING, Any, Protocol
 
 from pydantic import Field
+from reactivex import operators as ops
 from reactivex.disposable import Disposable
 from reactivex.observable import Observable
 import rerun.blueprint as rrb
@@ -99,7 +100,7 @@ def make_connection(ip: str | None, cfg: GlobalConfig) -> Go2ConnectionProtocol:
 
     if ip in ("fake", "mock", "replay") or connection_type == "replay":
         dataset = cfg.replay_dir
-        return ReplayConnection(dataset=dataset)
+        return ReplayConnection(dataset=dataset, exit_on_eof=cfg.exit_on_eof)
     elif ip == "mujoco" or connection_type == "mujoco":
         from dimos.robot.unitree.mujoco_connection import MujocoConnection
 
@@ -114,20 +115,31 @@ class ReplayConnection(UnitreeWebRTCConnection):
     def __init__(  # type: ignore[no-untyped-def]
         self,
         dataset: str = "go2_sf_office",
+        exit_on_eof: bool = False,
         **kwargs,
     ) -> None:
         self.dir_name = dataset
         get_data(self.dir_name)
+        # When exit_on_eof is set, replay streams run once and complete at EOF
+        # so the coordinator can be signalled to shut down for fixed-work benches.
+        default_loop = not exit_on_eof
         self.replay_config = {
-            "loop": kwargs.get("loop", True),
+            "loop": kwargs.get("loop", default_loop),
             "seek": kwargs.get("seek"),
             "duration": kwargs.get("duration"),
         }
+        logging.getLogger(__name__).info(
+            "ReplayConnection init: dataset=%s exit_on_eof=%s loop=%s",
+            dataset, exit_on_eof, self.replay_config["loop"],
+        )
 
     def connect(self) -> None:
         pass
 
     def start(self) -> None:
+        pass
+
+    def stop(self) -> None:
         pass
 
     def standup(self) -> bool:
@@ -237,9 +249,53 @@ class GO2Connection(Module, Camera, Pointcloud):
             self.color_image.publish(image)
             self._latest_video_frame = image
 
-        self.register_disposable(self.connection.lidar_stream().subscribe(self.lidar.publish))
-        self.register_disposable(self.connection.odom_stream().subscribe(self._publish_tf))
-        self.register_disposable(self.connection.video_stream().subscribe(onimage))
+        lidar_stream = self.connection.lidar_stream()
+        odom_stream = self.connection.odom_stream()
+        video_stream = self.connection.video_stream()
+
+        logging.getLogger(__name__).info(
+            "GO2Connection.start: exit_on_eof=%s", self.config.g.exit_on_eof
+        )
+        if self.config.g.exit_on_eof:
+            import os
+            import signal
+            import threading
+
+            pending = {"count": 3}
+            lock = threading.Lock()
+            main_pid_str = os.environ.get("DIMOS_MAIN_PID")
+            main_pid = int(main_pid_str) if main_pid_str else os.getppid()
+
+            def _on_stream_complete(name: str) -> None:
+                with lock:
+                    pending["count"] -= 1
+                    remaining = pending["count"]
+                logging.getLogger(__name__).info(
+                    "replay stream completed (%s); %d remaining", name, remaining
+                )
+                if remaining == 0:
+                    logging.getLogger(__name__).info(
+                        "all replay streams reached EOF; signalling main process pid=%d",
+                        main_pid,
+                    )
+                    try:
+                        os.kill(main_pid, signal.SIGINT)
+                    except ProcessLookupError:
+                        pass
+
+            lidar_stream = lidar_stream.pipe(
+                ops.do_action(on_completed=lambda: _on_stream_complete("lidar"))
+            )
+            odom_stream = odom_stream.pipe(
+                ops.do_action(on_completed=lambda: _on_stream_complete("odom"))
+            )
+            video_stream = video_stream.pipe(
+                ops.do_action(on_completed=lambda: _on_stream_complete("video"))
+            )
+
+        self.register_disposable(lidar_stream.subscribe(self.lidar.publish))
+        self.register_disposable(odom_stream.subscribe(self._publish_tf))
+        self.register_disposable(video_stream.subscribe(onimage))
         self.register_disposable(Disposable(self.cmd_vel.subscribe(self.move)))
 
         self._camera_info_thread = Thread(
