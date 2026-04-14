@@ -75,7 +75,7 @@ RPC_POOL_MAX_WORKERS = 50  # upstream default
 #   "default": 1 Hz (upstream behavior)
 #   "slow":    0.1 Hz (every 10s)
 #   "once":    publish once on start, then exit thread
-CAMERA_INFO_MODE = "once"  # "default" | "slow" | "once" | "skip"
+CAMERA_INFO_MODE = "skip"  # "default" | "slow" | "once" | "skip"
 
 
 # ------------------------------------------------------------------

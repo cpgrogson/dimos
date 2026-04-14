@@ -320,7 +320,10 @@ class GO2Connection(Module, Camera, Pointcloud):
         if _os.environ.get("DIMOS_SKIP_CMDVEL_SUB") != "1":
             self.register_disposable(Disposable(self.cmd_vel.subscribe(self.move)))
 
-        if _os.environ.get("DIMOS_CAMERA_INFO_MODE") == "once":
+        _ci_mode = _os.environ.get("DIMOS_CAMERA_INFO_MODE")
+        if _ci_mode == "skip":
+            self._camera_info_thread = None
+        elif _ci_mode == "once":
             self.publish_camera_info()
             self._camera_info_thread = None
         else:
@@ -387,6 +390,8 @@ class GO2Connection(Module, Camera, Pointcloud):
     def publish_camera_info(self) -> None:
         import os as _os
         mode = _os.environ.get("DIMOS_CAMERA_INFO_MODE", "default")
+        if mode == "skip":
+            return
         if mode == "once":
             self.camera_info.publish(self.camera_info_static)
             return
