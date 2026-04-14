@@ -313,11 +313,15 @@ class GO2Connection(Module, Camera, Pointcloud):
         self.register_disposable(video_stream.subscribe(onimage))
         self.register_disposable(Disposable(self.cmd_vel.subscribe(self.move)))
 
-        self._camera_info_thread = Thread(
-            target=self.publish_camera_info,
-            daemon=True,
-        )
-        self._camera_info_thread.start()
+        if _os.environ.get("DIMOS_CAMERA_INFO_MODE") == "once":
+            self.publish_camera_info()
+            self._camera_info_thread = None
+        else:
+            self._camera_info_thread = Thread(
+                target=self.publish_camera_info,
+                daemon=True,
+            )
+            self._camera_info_thread.start()
 
         if _os.environ.get("DIMOS_SKIP_ROBOT_INIT") != "1":
             self.standup()
