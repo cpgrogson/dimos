@@ -232,7 +232,7 @@ def test_detect_port_matches_fqbn() -> None:
 
 def test_detect_port_raises_on_no_match() -> None:
     mod = _make_module()
-    payload = {"detected_ports": []}
+    payload: dict[str, list[Any]] = {"detected_ports": []}
     with mock.patch(
         "dimos.core.arduino_module.subprocess.run",
         return_value=_run_result(json.dumps(payload)),
@@ -423,8 +423,8 @@ def _make_module_with_topics(topics: dict[str, str]) -> _ExampleModule:
     # the module-level reflection sees only the two In/Out stubs from
     # _make_module).  Monkey-patch the properties on this instance.
     inputs_list = list(topics)
-    mod.__class__.inputs = property(lambda self: inputs_list)  # type: ignore[method-assign]
-    mod.__class__.outputs = property(lambda self: [])  # type: ignore[method-assign]
+    mod.__class__.inputs = property(lambda self: inputs_list)  # type: ignore[method-assign,assignment]
+    mod.__class__.outputs = property(lambda self: [])  # type: ignore[method-assign,assignment]
     return mod
 
 
