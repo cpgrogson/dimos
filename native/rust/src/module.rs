@@ -9,10 +9,6 @@ use crate::transport::Transport;
 const INPUT_CHANNEL_CAPACITY: usize = 16;
 const PUBLISH_CHANNEL_CAPACITY: usize = 64;
 
-// ---------------------------------------------------------------------------
-// Internal routing machinery
-// ---------------------------------------------------------------------------
-
 // Each input() call produces a TypedRoute that decodes its message type
 // and forwards it to the right Input's mpsc channel.
 trait Route: Send {
@@ -39,11 +35,6 @@ impl<T: Send + 'static> Route for TypedRoute<T> {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Input / Output
-// ---------------------------------------------------------------------------
-
 pub struct Input<T> {
     pub topic: String,
     receiver: mpsc::Receiver<T>,
@@ -70,10 +61,6 @@ impl<T> Output<T> {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "background task gone"))
     }
 }
-
-// ---------------------------------------------------------------------------
-// NativeModule
-// ---------------------------------------------------------------------------
 
 /// High-level wrapper around a transport for use in dimos native modules.
 ///
@@ -134,16 +121,14 @@ impl<T: Transport> NativeModule<T> {
         Ok(module)
     }
 
-    /// Read config from a single JSON line on stdin, as written by the Python NativeModule.
+    /// Read config from a single JSON line on stdin, as written by the Python NativeModule declaration.
     ///
     /// The JSON format is:
     /// ```json
     /// {"topics": {"port_name": "lcm/topic", ...}, "config": { ... }}
     /// ```
     ///
-    /// `C` is the module-specific config type. Use `()` if there is no extra config.
-    /// Blocks until stdin delivers a line (Python always writes before the process does
-    /// anything meaningful, and the OS pipe buffers the data if timing differs).
+    /// `C` is the module-specific config type. Use `()` if there is no extra configs to pass.
     pub async fn from_stdin<C: DeserializeOwned + Default + std::fmt::Debug>(transport: T) -> io::Result<(Self, C)> {
         let mut module = Self::new(transport);
 
