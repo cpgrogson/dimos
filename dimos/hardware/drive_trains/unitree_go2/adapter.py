@@ -237,10 +237,9 @@ class UnitreeGo2TwistAdapter:
 
         try:
             session.client.StopMove()
-            time.sleep(0.5)
-            logger.info("[Go2] Standing down...")
+            time.sleep(0.2)
             session.client.StandDown()
-            time.sleep(2)
+            time.sleep(0.3)
         except Exception as e:
             logger.error(f"[Go2] Error during disconnect: {e}")
 
