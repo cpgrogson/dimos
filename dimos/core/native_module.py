@@ -98,11 +98,6 @@ class NativeModuleConfig(ModuleConfig):
     extra_args: list[str] = Field(default_factory=list)
     extra_env: dict[str, str] = Field(default_factory=dict)
     shutdown_timeout: float = DEFAULT_THREAD_JOIN_TIMEOUT
-    rebuild_on_change: list[PathEntry] | None = None
-    # When True, always invoke ``build_command`` on start, bypassing the
-    # ``rebuild_on_change`` check.  Useful with nix-style builds that are
-    # cheap no-ops when nothing has changed (nix decides via its own cache).
-    should_rebuild: bool = False
 
     # Override in subclasses to exclude fields from CLI arg generation
     cli_exclude: frozenset[str] = frozenset()
@@ -351,46 +346,33 @@ class NativeModule(Module):
         stream.close()
 
     def _maybe_build(self) -> None:
-        """Run ``build_command`` if the executable does not exist or sources changed."""
+        """Run ``build_command`` when not in PROD mode, or if the executable is missing.
+
+        When ``PROD`` env var is set, skip rebuilding entirely — the executable
+        must already exist.  Otherwise, always invoke ``build_command`` and let
+        nix handle caching/cache-busting.
+        """
         exe = Path(self.config.executable)
+        is_prod = os.environ.get("PROD")
 
-        # Check if rebuild needed due to source changes. We call did_change
-        # even when the exe is missing so the cache gets seeded on the first
-        # build — no separate seed step needed afterwards.
-        source_file = Path(inspect.getfile(type(self))).resolve()
-        cache_name = f"native_{type(self).__name__}_{source_file}"
-        needs_rebuild = self.config.should_rebuild or (
-            self.config.rebuild_on_change
-            and did_change(
-                cache_name,
-                self.config.rebuild_on_change,
-                cwd=self.config.cwd,
-                extra_hash=self.config.build_command,
-                update=False,
-            )
-        )
-
-        if not needs_rebuild and exe.exists():
+        if is_prod:
+            if not exe.exists():
+                raise FileNotFoundError(
+                    f"[{self._mod_label}] PROD is set but executable not found: {exe}. "
+                    "Build it before deploying."
+                )
             return
 
         if self.config.build_command is None:
-            raise FileNotFoundError(
-                f"[{self._mod_label}] Executable not found: {exe}. "
-                "Set build_command in config to auto-build, or build it manually."
-            )
-
-        # Clear the old executable before rebuilding so a failed build can't
-        # leave us accidentally running a stale binary.
-        #
-        # Note: deletion isn't a straightforward rm -rf.
-        # For nix builds, the exe lives at something like ``cpp/result/bin/mid360``
-        # where ``result`` is a symlink into the read-only /nix/store.
-        # Trying to delete the executable itself will cause a permission error
-        # We have to walk up to the `result` dir and then unlink that
-        _clear_nix_executable(exe, Path(self.config.cwd) if self.config.cwd else None)
+            if not exe.exists():
+                raise FileNotFoundError(
+                    f"[{self._mod_label}] Executable not found: {exe}. "
+                    "Set build_command in config to auto-build, or build it manually."
+                )
+            return
 
         logger.info(
-            "Rebuilding" if needs_rebuild else "Executable not found, building",
+            "Building native module",
             executable=str(exe),
             build_command=self.config.build_command,
         )
@@ -417,13 +399,9 @@ class NativeModule(Module):
                 logger.warning(line, module=self._mod_label)
 
         if proc.returncode != 0:
-            # Include the last stderr lines in the exception for RPC callers.
-            tail = [l for l in stderr_lines if l.strip()][-20:]
-            tail_str = "\n".join(tail) if tail else "(no stderr output)"
             raise RuntimeError(
                 f"[{self._mod_label}] Build command failed after {build_elapsed:.2f}s "
-                f"(exit {proc.returncode}): {self.config.build_command}\n"
-                f"--- last stderr ---\n{tail_str}"
+                f"(exit {proc.returncode}): {self.config.build_command}"
             )
         if not exe.exists():
             raise FileNotFoundError(
@@ -436,17 +414,6 @@ class NativeModule(Module):
             executable=str(exe),
             duration_sec=round(build_elapsed, 3),
         )
-
-        # Only update the source-hash cache after a successful build, so a
-        # failed build doesn't trick the next call into thinking everything
-        # is current.
-        if self.config.rebuild_on_change:
-            update_cache(
-                cache_name,
-                self.config.rebuild_on_change,
-                cwd=self.config.cwd,
-                extra_hash=self.config.build_command,
-            )
 
     def _collect_topics(self) -> dict[str, str]:
         """Extract LCM topic strings from blueprint-assigned stream transports."""
