@@ -33,7 +33,7 @@ Odometry routing (per CMU ICRA 2022 Fig. 11):
 Data flow:
     Click → ClickToGoal (corrected_odom) → goal → FarPlanner (corrected_odom)
     → way_point → LocalPlanner (raw odom) → path → PathFollower (raw odom)
-    → nav_cmd_vel → CmdVelMux → cmd_vel → G1HighLevelDdsSdk
+    → nav_cmd_vel → MovementManager → cmd_vel → G1HighLevelDdsSdk
 
     registered_scan + odometry → PGO → corrected_odometry + global_map
 """

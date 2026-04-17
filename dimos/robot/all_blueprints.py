@@ -113,7 +113,7 @@ all_modules = {
     "camera-module": "dimos.hardware.sensors.camera.module.CameraModule",
     "cartesian-motion-controller": "dimos.manipulation.control.servo_control.cartesian_motion_controller.CartesianMotionController",
     "click-to-goal": "dimos.navigation.smart_nav.modules.click_to_goal.click_to_goal.ClickToGoal",
-    "cmd-vel-mux": "dimos.navigation.cmd_vel_mux.CmdVelMux",
+    "cmd-vel-mux": "dimos.navigation.smart_nav.modules.movement_manager.movement_manager.MovementManager",
     "control-coordinator": "dimos.control.coordinator.ControlCoordinator",
     "cost-mapper": "dimos.mapping.costmapper.CostMapper",
     "demo-calculator-skill": "dimos.agents.skills.demo_calculator_skill.DemoCalculatorSkill",

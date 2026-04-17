@@ -160,6 +160,8 @@ class G1HighLevelDdsSdk(Module, HighLevelG1Spec):
         self._select_motion_mode()
         self._running = True
 
+        # Stream._transport is the only way to check if a port is wired;
+        # there is no public API for this yet (see dimos/core/stream.py).
         if self.cmd_vel._transport is not None:
             self.register_disposable(Disposable(self.cmd_vel.subscribe(self.move)))
         logger.info("G1 DDS SDK connection started")

@@ -31,7 +31,7 @@ Odometry routing (per CMU ICRA 2022 Fig. 11):
 Data flow:
     Click → ClickToGoal (corrected_odom) → goal → SimplePlanner (corrected_odom)
     → way_point → LocalPlanner (raw odom) → path → PathFollower (raw odom)
-    → nav_cmd_vel → CmdVelMux → cmd_vel → UnityBridgeModule
+    → nav_cmd_vel → MovementManager → cmd_vel → UnityBridgeModule
 
     registered_scan + odometry → PGO → corrected_odometry + global_map
 """

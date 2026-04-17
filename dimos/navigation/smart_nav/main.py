@@ -63,7 +63,6 @@ def smart_nav(
     simple_planner: dict[str, Any] | None = None,
     pgo: dict[str, Any] | None = None,
     movement_manager: dict[str, Any] | None = None,
-    cmd_vel_mux: dict[str, Any] | None = None,
     tare_planner: dict[str, Any] | None = None,
 ) -> Blueprint:
     """Compose a SmartNav autoconnect Blueprint with the given options.
@@ -76,7 +75,7 @@ def smart_nav(
         joy_cmd:         In[Twist]         — optional joystick override
         tele_cmd_vel:    In[Twist]         — optional teleop command
 
-        cmd_vel:            Out[Twist]        — final velocity command (CmdVelMux)
+        cmd_vel:            Out[Twist]        — final velocity command (MovementManager)
         corrected_odometry: Out[Odometry]     — PGO loop-closure-corrected pose
         global_map:         Out[PointCloud2]  — PGO accumulated keyframe map
         terrain_map:        Out[PointCloud2]  — TerrainAnalysis ground/obstacle grid
@@ -84,7 +83,7 @@ def smart_nav(
         goal_path:          Out[Path]         — FAR planner's global path
         way_point:          Out[PointStamped] — current waypoint target
         goal:               Out[PointStamped] — current navigation goal
-        stop_movement:      Out[Bool]         — stop signal from CmdVelMux
+        stop_movement:      Out[Bool]         — stop signal from MovementManager
 
     Args:
         use_tare: Add the TARE frontier-based exploration planner. Auto-remaps
@@ -95,7 +94,7 @@ def smart_nav(
         vehicle_height: Ignore terrain points above this height (m). Threaded
             into TerrainAnalysis's `vehicle_height` config. Defaults to 1.2m.
         terrain_analysis, terrain_map_ext, local_planner, path_follower,
-        far_planner, pgo, click_to_goal, cmd_vel_mux, tare_planner:
+        far_planner, pgo, movement_manager, tare_planner:
         Per-module config override dicts. Merged on top
         of the SmartNav defaults.
 
@@ -200,7 +199,7 @@ def smart_nav(
             else [FarPlanner.blueprint(**(far_planner or {}))]
         ),
         PGO.blueprint(**(pgo or {})),
-        MovementManager.blueprint(**(movement_manager or cmd_vel_mux or {})),
+        MovementManager.blueprint(**(movement_manager or {})),
     ]
     if use_terrain_map_ext:
         modules.append(

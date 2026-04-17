@@ -75,7 +75,7 @@ class CmdVelScaling(BaseModel):
     yaw: float = 1.0
 
 
-class Config(ModuleConfig):
+class RerunWebSocketServerConfig(ModuleConfig):
     # Intentionally binds 0.0.0.0 by default so the viewer can connect from
     # any machine on the network (the typical robot deployment scenario).
     host: str = "0.0.0.0"
@@ -96,11 +96,11 @@ class RerunWebSocketServer(Module):
         clicked_point: 3-D world-space point from the most recent viewer click.
         tele_cmd_vel: Twist velocity commands from keyboard teleop, including stop events.
 
-    Note: ``stop_movement`` is owned by ``CmdVelMux`` — it will fire that
-    signal when it sees the first teleop twist arrive here.
+    Note: ``stop_movement`` is owned by ``MovementManager`` — it will fire
+    that signal when it sees the first teleop twist arrive here.
     """
 
-    config: Config
+    config: RerunWebSocketServerConfig
 
     clicked_point: Out[PointStamped]
     tele_cmd_vel: Out[Twist]
