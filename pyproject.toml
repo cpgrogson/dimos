@@ -170,16 +170,12 @@ agents = [
     # Audio
     "openai",
     "sounddevice",
+    "faster-whisper",
 ]
 
 whisper = [
     "dimos[agents]",
     "openai-whisper",
-]
-
-whisper-cpu = [
-    "dimos[agents]",
-    "faster-whisper",
 ]
 
 web = [

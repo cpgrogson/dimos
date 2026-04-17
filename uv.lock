@@ -1763,6 +1763,7 @@ dependencies = [
 agents = [
     { name = "anthropic" },
     { name = "bitsandbytes", marker = "sys_platform == 'linux'" },
+    { name = "faster-whisper" },
     { name = "langchain" },
     { name = "langchain-chroma" },
     { name = "langchain-core" },
@@ -1779,6 +1780,7 @@ base = [
     { name = "bitsandbytes", marker = "sys_platform == 'linux'" },
     { name = "dimos-viewer" },
     { name = "fastapi" },
+    { name = "faster-whisper" },
     { name = "ffmpeg-python" },
     { name = "filterpy" },
     { name = "hydra-core" },
@@ -1984,6 +1986,7 @@ unitree = [
     { name = "bitsandbytes", marker = "sys_platform == 'linux'" },
     { name = "dimos-viewer" },
     { name = "fastapi" },
+    { name = "faster-whisper" },
     { name = "ffmpeg-python" },
     { name = "filterpy" },
     { name = "hydra-core" },
@@ -2026,21 +2029,6 @@ web = [
 whisper = [
     { name = "anthropic" },
     { name = "bitsandbytes", marker = "sys_platform == 'linux'" },
-    { name = "langchain" },
-    { name = "langchain-chroma" },
-    { name = "langchain-core" },
-    { name = "langchain-huggingface" },
-    { name = "langchain-ollama" },
-    { name = "langchain-openai" },
-    { name = "langchain-text-splitters" },
-    { name = "ollama" },
-    { name = "openai" },
-    { name = "openai-whisper" },
-    { name = "sounddevice" },
-]
-whisper-cpu = [
-    { name = "anthropic" },
-    { name = "bitsandbytes", marker = "sys_platform == 'linux'" },
     { name = "faster-whisper" },
     { name = "langchain" },
     { name = "langchain-chroma" },
@@ -2051,6 +2039,7 @@ whisper-cpu = [
     { name = "langchain-text-splitters" },
     { name = "ollama" },
     { name = "openai" },
+    { name = "openai-whisper" },
     { name = "sounddevice" },
 ]
 
@@ -2068,7 +2057,6 @@ requires-dist = [
     { name = "cupy-cuda12x", marker = "platform_machine == 'x86_64' and extra == 'cuda'", specifier = "==13.6.0" },
     { name = "cyclonedds", marker = "extra == 'dds'", specifier = ">=0.10.5" },
     { name = "dimos", extras = ["agents"], marker = "extra == 'whisper'" },
-    { name = "dimos", extras = ["agents"], marker = "extra == 'whisper-cpu'" },
     { name = "dimos", extras = ["agents", "web", "perception", "visualization", "sim"], marker = "extra == 'base'" },
     { name = "dimos", extras = ["base"], marker = "extra == 'unitree'" },
     { name = "dimos", extras = ["dev"], marker = "extra == 'dds'" },
@@ -2082,7 +2070,7 @@ requires-dist = [
     { name = "einops", marker = "extra == 'misc'", specifier = "==0.8.1" },
     { name = "empy", marker = "extra == 'misc'", specifier = "==3.3.4" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.115.6" },
-    { name = "faster-whisper", marker = "extra == 'whisper-cpu'" },
+    { name = "faster-whisper", marker = "extra == 'agents'" },
     { name = "ffmpeg-python", marker = "extra == 'web'" },
     { name = "filterpy", marker = "extra == 'perception'", specifier = ">=1.4.5" },
     { name = "gdown", marker = "extra == 'misc'", specifier = "==5.2.0" },
@@ -2225,7 +2213,7 @@ requires-dist = [
     { name = "xformers", marker = "platform_machine == 'x86_64' and extra == 'cuda'", specifier = ">=0.0.20" },
     { name = "yapf", marker = "extra == 'misc'", specifier = "==0.40.2" },
 ]
-provides-extras = ["misc", "visualization", "agents", "whisper", "whisper-cpu", "web", "perception", "unitree", "manipulation", "cpu", "cuda", "dev", "psql", "sim", "drone", "dds", "docker", "base"]
+provides-extras = ["misc", "visualization", "agents", "whisper", "web", "perception", "unitree", "manipulation", "cpu", "cuda", "dev", "psql", "sim", "drone", "dds", "docker", "base"]
 
 [[package]]
 name = "dimos-lcm"
