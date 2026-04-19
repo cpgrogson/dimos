@@ -191,6 +191,8 @@ class TestDimSimCrossWall:
             "LCM_DEFAULT_URL", "udpm://239.255.76.67:7667?ttl=0"
         )
         lc = lcmlib.LCM(lcm_url)
+        # Separate publisher to avoid threading conflicts with handle_timeout
+        lc_pub = lcmlib.LCM(lcm_url)
 
         def _odom_handler(channel: str, data: bytes) -> None:
             nonlocal odom_count, robot_x, robot_y
@@ -245,15 +247,14 @@ class TestDimSimCrossWall:
                 )
                 deadline_t = time.monotonic() + duration
                 while time.monotonic() < deadline_t:
-                    lc.publish(CMD_VEL_TOPIC, twist.lcm_encode())
-                    lc.handle_timeout(10)
+                    lc_pub.publish(CMD_VEL_TOPIC, twist.lcm_encode())
                     time.sleep(0.05)
                 # Stop
                 stop = Twist(
                     linear=Vector3(0.0, 0.0, 0.0),
                     angular=Vector3(0.0, 0.0, 0.0),
                 )
-                lc.publish(CMD_VEL_TOPIC, stop.lcm_encode())
+                lc_pub.publish(CMD_VEL_TOPIC, stop.lcm_encode())
 
             # Drive forward, turn, drive forward, turn — builds map coverage
             _drive(0.5, 0.0, 3.0)   # forward 3s
@@ -289,7 +290,7 @@ class TestDimSimCrossWall:
                 goal = PointStamped(
                     x=gx, y=gy, z=gz, ts=time.time(), frame_id="map"
                 )
-                lc.publish(GOAL_TOPIC, goal.lcm_encode())
+                lc_pub.publish(GOAL_TOPIC, goal.lcm_encode())
                 print(f"[test] Goal published for {name}")
 
                 # Wait for robot to reach goal or timeout
