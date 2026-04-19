@@ -451,9 +451,27 @@ class DimSimBridge(Module):
                         )
                         if system == "darwin":
                             subprocess.run(["xattr", "-c", str(dimsim)], capture_output=True)
+
+                        # Sanity check: min size (compiled binaries are >1MB) + smoketest
+                        file_size = dimsim.stat().st_size
+                        if file_size < 1_000_000:
+                            dimsim.unlink()
+                            raise RuntimeError(
+                                f"Downloaded binary too small ({file_size} bytes) — likely a bad download"
+                            )
+                        smoke = subprocess.run(
+                            [str(dimsim), "--version"],
+                            capture_output=True, text=True, timeout=10,
+                        )
+                        if smoke.returncode != 0:
+                            dimsim.unlink()
+                            raise RuntimeError(
+                                f"Binary smoketest failed (exit {smoke.returncode}): {smoke.stderr.strip()}"
+                            )
+                        logger.info(f"dimsim binary installed (v{smoke.stdout.strip()}, {file_size // 1024}KB).")
+
                         dimsim_path = str(dimsim)
                         downloaded = True
-                        logger.info("dimsim binary installed.")
                     except Exception as exc:
                         logger.warning(f"Binary download failed ({exc}), trying deno fallback...")
 

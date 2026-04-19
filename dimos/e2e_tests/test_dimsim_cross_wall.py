@@ -232,15 +232,23 @@ def _distance(x1: float, y1: float, x2: float, y2: float) -> float:
 
 
 def _force_kill_port(port: int) -> None:
+    """Kill processes on the given port. SIGTERM first, SIGKILL after 3s."""
     try:
         result = subprocess.run(
             ["lsof", "-ti", f":{port}"],
             capture_output=True, text=True, timeout=5,
         )
-        for pid in result.stdout.strip().split():
-            if pid:
+        pids = [int(p) for p in result.stdout.strip().split() if p]
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, ValueError):
+                pass
+        if pids:
+            time.sleep(3)
+            for pid in pids:
                 try:
-                    os.kill(int(pid), signal.SIGKILL)
+                    os.kill(pid, signal.SIGKILL)
                 except (ProcessLookupError, ValueError):
                     pass
     except Exception:
@@ -259,15 +267,23 @@ def _wait_for_port_free(port: int, timeout: float = 30) -> bool:
 
 
 def _kill_headless_chrome() -> None:
+    """Kill leftover headless Chrome. SIGTERM first, SIGKILL after 3s."""
     try:
         result = subprocess.run(
             ["pgrep", "-f", "chrome.*headless.*playwright"],
             capture_output=True, text=True, timeout=5,
         )
-        for pid in result.stdout.strip().split():
-            if pid:
+        pids = [int(p) for p in result.stdout.strip().split() if p]
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except (ProcessLookupError, ValueError):
+                pass
+        if pids:
+            time.sleep(3)
+            for pid in pids:
                 try:
-                    os.kill(int(pid), signal.SIGKILL)
+                    os.kill(pid, signal.SIGKILL)
                 except (ProcessLookupError, ValueError):
                     pass
     except Exception:
