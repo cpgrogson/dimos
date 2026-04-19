@@ -290,12 +290,6 @@ class ArduinoModule(NativeModule):
 
     config: ArduinoModuleConfig
 
-    # The bridge has its own CLI schema (``--topic_in <id> <channel>``,
-    # ``--topic_out <id> <channel>``) so we build the command line
-    # ourselves in :meth:`start` and opt out of ``NativeModule``'s
-    # generic ``--<stream_name> <topic>`` emission.
-    _auto_emit_topic_cli_args: ClassVar[bool] = False
-
     # Override for custom message type C code generation
     c_type_generators: ClassVar[dict[type, CTypeGenerator]] = {}
 
@@ -412,6 +406,12 @@ class ArduinoModule(NativeModule):
                 f"or remap them to use LCM."
             )
         return raw
+
+    def _build_topic_args(self) -> list[str]:
+        # The bridge uses its own CLI schema (--topic_in <id> <channel>,
+        # --topic_out <id> <channel>) built in start(), so suppress the
+        # generic --<stream_name> <topic> args from NativeModule.
+        return []
 
     @rpc
     def start(self) -> None:
