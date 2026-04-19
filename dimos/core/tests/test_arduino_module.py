@@ -201,6 +201,54 @@ def test_generate_header_rejects_unembeddable_type(tmp_path: Path) -> None:
             mod._generate_header()
 
 
+def test_generate_header_includes_arduino_defines(tmp_path: Path) -> None:
+    """arduino_defines config values appear as #define in the header."""
+
+    class _DefinesConfig(_ExampleConfig):
+        arduino_defines: dict[str, int | float | str | bool] = {
+            "MOTOR_PIN": 13,
+            "SENSOR_THRESHOLD": 0.5,
+            "ROBOT_NAME": "uno_bot",
+            "ENABLE_DEBUG": True,
+        }
+
+    mod = _make_module()
+    mod.config = _DefinesConfig()
+    sketch_patch, build_patch = _patch_sketch_and_build_dirs(mod, tmp_path)
+    with sketch_patch, build_patch:
+        mod._generate_header()
+    text = (tmp_path / "dimos_arduino.h").read_text()
+
+    assert "#define MOTOR_PIN 13" in text
+    assert "#define SENSOR_THRESHOLD 0.5f" in text
+    assert '#define ROBOT_NAME "uno_bot"' in text
+    assert "#define ENABLE_DEBUG 1" in text
+    assert "User-defined constants" in text
+
+
+def test_generate_header_rejects_invalid_define_name(tmp_path: Path) -> None:
+    """arduino_defines keys must be valid C identifiers."""
+
+    class _BadDefConfig(_ExampleConfig):
+        arduino_defines: dict[str, int | float | str | bool] = {"123bad": 1}
+
+    mod = _make_module()
+    mod.config = _BadDefConfig()
+    sketch_patch, build_patch = _patch_sketch_and_build_dirs(mod, tmp_path)
+    with sketch_patch, build_patch:
+        with pytest.raises(ValueError, match="not a valid C identifier"):
+            mod._generate_header()
+
+
+def test_tuning_fields_default_to_none() -> None:
+    """Tuning knobs default to None (use header defaults)."""
+    cfg = _ExampleConfig()
+    assert cfg.max_subs is None
+    assert cfg.max_pending is None
+    assert cfg.max_msg_size is None
+    assert cfg.max_payload is None
+
+
 # _detect_port — mocked arduino-cli
 
 

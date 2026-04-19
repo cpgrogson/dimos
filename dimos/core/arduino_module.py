@@ -207,6 +207,22 @@ class ArduinoModuleConfig(NativeModuleConfig):
     auto_flash: bool = True
     flash_timeout: float = 60.0
 
+    # --- Compile-time tuning (passed as -D flags to arduino-cli) ---
+    # These override the defaults in dimos_lcm_pubsub.h / dsp_protocol.h.
+    # Set to None (the default) to keep the header's built-in default.
+    max_subs: int | None = None  # DIMOS_LCM_MAX_SUBS (AVR default: 4)
+    max_pending: int | None = None  # DIMOS_LCM_MAX_PENDING (AVR default: 2)
+    max_msg_size: int | None = None  # DIMOS_LCM_MAX_MSG_SIZE (AVR default: 64)
+    max_payload: int | None = None  # DSP_MAX_PAYLOAD (AVR default: 256)
+
+    # Arbitrary user-defined #defines emitted in dimos_arduino.h and
+    # passed as -D compiler flags.  Example:
+    #   arduino_defines={"MOTOR_PIN": 13, "SENSOR_THRESHOLD": 0.5}
+    # becomes:
+    #   #define MOTOR_PIN 13
+    #   #define SENSOR_THRESHOLD 0.5f
+    arduino_defines: dict[str, int | float | str | bool] = {}
+
     # Subclass fields to exclude from the generated #define embedding.
     # Framework fields are excluded automatically; this is for user fields
     # that shouldn't reach the sketch.
@@ -219,6 +235,37 @@ _ARDUINO_SKETCH_FIELDS: frozenset[str] = frozenset({"baudrate"})
 
 # Must match #ifdef __AVR__ in dsp_protocol.h.
 _AVR_DEFAULT_DSP_MAX_PAYLOAD = 256
+
+# Mapping from ArduinoModuleConfig field names to C preprocessor macros
+# for the compile-time tuning knobs.
+_TUNING_FIELD_TO_DEFINE: dict[str, str] = {
+    "max_subs": "DIMOS_LCM_MAX_SUBS",
+    "max_pending": "DIMOS_LCM_MAX_PENDING",
+    "max_msg_size": "DIMOS_LCM_MAX_MSG_SIZE",
+    "max_payload": "DSP_MAX_PAYLOAD",
+}
+
+
+def _c_literal(name: str, val: int | float | str | bool) -> str:
+    """Convert a Python value to a C literal string for ``#define``."""
+    if isinstance(val, bool):
+        return "1" if val else "0"
+    if isinstance(val, int):
+        return str(val)
+    if isinstance(val, float):
+        if not math.isfinite(val):
+            raise ValueError(
+                f"Cannot embed non-finite float for arduino_defines key {name!r} (value={val!r})"
+            )
+        return f"{val}f"
+    if isinstance(val, str):
+        return json.dumps(val)
+    raise TypeError(
+        f"arduino_defines key {name!r} has unsupported type "
+        f"{type(val).__name__}. Use int, float, str, or bool."
+    )
+
+
 _AVR_FQBN_PREFIXES: tuple[str, ...] = ("arduino:avr:",)
 
 
@@ -435,7 +482,7 @@ class ArduinoModule(NativeModule):
         if not self.config.board_fqbn.startswith(_AVR_FQBN_PREFIXES):
             return
 
-        limit = _AVR_DEFAULT_DSP_MAX_PAYLOAD
+        limit = self.config.max_payload or _AVR_DEFAULT_DSP_MAX_PAYLOAD
         offenders: list[tuple[str, str, int]] = []
         for name, msg_type in stream_types.items():
             if name not in self.inputs:
@@ -460,6 +507,30 @@ class ArduinoModule(NativeModule):
                 f"via `-DDSP_MAX_PAYLOAD=<bigger>` in compile flags "
                 f"and remove this check by subclassing "
                 f"`_validate_inbound_payload_sizes`."
+            )
+
+    def _warn_avr_sram_pressure(self, stream_types: dict[str, type]) -> None:
+        """Log a warning if the number of streams is likely to overflow AVR SRAM.
+
+        Each stream adds a subscription entry (~9 bytes), a topic mapping
+        entry, and the type's encode/decode code.  The LCM pubsub engine
+        itself uses ~256 bytes (decode buffer + outbox) on AVR.  With
+        Arduino Uno's 2KB total SRAM, more than ~4 streams is risky.
+        """
+        if not self.config.board_fqbn.startswith(_AVR_FQBN_PREFIXES):
+            return
+        n = len(stream_types)
+        threshold = self.config.max_subs or 4
+        if n > threshold:
+            logger.warning(
+                "AVR SRAM pressure: %d streams declared (max_subs=%d) on a "
+                "board with ~2KB SRAM. Each stream adds subscriptions, type "
+                "descriptors, and encode/decode buffers. Compilation may fail "
+                "with 'data section exceeds available space'. Consider "
+                "reducing streams, increasing max_subs (if your board has "
+                "enough SRAM), or using a board with more SRAM.",
+                n,
+                threshold,
             )
 
     def _build_topic_enum(self) -> dict[str, int]:
@@ -528,6 +599,7 @@ class ArduinoModule(NativeModule):
         stream_types = self._get_stream_types()
         topic_enum = self._build_topic_enum()
         self._validate_inbound_payload_sizes(stream_types)
+        self._warn_avr_sram_pressure(stream_types)
 
         sections: list[str] = []
 
@@ -574,6 +646,17 @@ class ArduinoModule(NativeModule):
                     f"arduino_config_exclude or convert it to str/int/float/bool."
                 )
         sections.append("")
+
+        # User-defined #defines from arduino_defines config.
+        if self.config.arduino_defines:
+            sections.append("/* --- User-defined constants --- */")
+            for def_name, def_val in self.config.arduino_defines.items():
+                if not def_name.isidentifier():
+                    raise ValueError(
+                        f"arduino_defines key {def_name!r} is not a valid C identifier."
+                    )
+                sections.append(f"#define {def_name} {_c_literal(def_name, def_val)}")
+            sections.append("")
 
         # Topic enum (still used by bridge CLI args and backward compat)
         sections.append("/* --- Topic enum (shared with C++ bridge) --- */")
@@ -743,6 +826,17 @@ class ArduinoModule(NativeModule):
         if self.config.virtual:
             # QEMU AVR doesn't fire USART interrupts — use direct register I/O.
             extra_flags += " -DDSP_DIRECT_USART"
+
+        # Compile-time tuning knobs from config fields.
+        for field, macro in _TUNING_FIELD_TO_DEFINE.items():
+            val = getattr(self.config, field)
+            if val is not None:
+                extra_flags += f" -D{macro}={val}"
+
+        # User-defined #defines also passed as -D flags so they're
+        # visible in all translation units, not just via the header.
+        for def_name, def_val in self.config.arduino_defines.items():
+            extra_flags += f" -D{def_name}={_c_literal(def_name, def_val)}"
 
         cmd = [
             _arduino_cli_bin(),
