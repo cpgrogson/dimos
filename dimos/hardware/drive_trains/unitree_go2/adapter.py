@@ -12,61 +12,44 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unitree Go2 TwistBase adapter — merged SDK2 control plane for the quadruped.
+"""Unitree Go2 TwistBase adapter — SDK2 high-level control plane.
 
-Implements the TwistBaseAdapter protocol (3 DOF: vx, vy, wz) on top of
-unitree_sdk2py. Covers the full high-level control plane in a single class:
+Implements TwistBaseAdapter (3 DOF: vx, vy, wz) on top of unitree_sdk2py.
+Connects via DDS (ChannelFactoryInitialize → MotionSwitcher → SportClient
+→ StandUp → FreeWalk). Enables Rage Mode by default (opt-out via
+rage_mode=False) by publishing synthesized WirelessController_ messages
+on rt/wirelesscontroller_unprocessed.
 
-  - TwistBase surface (connect/read/write/enable) for the tick loop
-  - MotionSwitcher inspection/control (check_mode, switch_mode, safe release)
-  - Raw SportModeState_ readout for diagnostics
-  - Defined-but-unwired low-level hooks (subscribe_low_state / publish_low_cmd)
-    — real implementation lives in adapter_lowlevel.py
-
-Required init sequence on current Go2 firmware:
-
-  ChannelFactoryInitialize → MotionSwitcher.CheckMode/SelectMode("normal")
-  → SportClient.Init → StandUp → FreeWalk → Move(vx, vy, wz)
-
-The sport service boots dormant on recent firmware — every SportClient RPC
-returns 3102 (RPC_ERR_CLIENT_SEND) until MotionSwitcher has selected a mode.
-
-MotionSwitcher modes recognized by the SDK:
-  - "normal"   — factory sport controller; SportClient high-level API
-  - "ai"       — AI sport controller with built-in autonomous behaviors
-  - "advanced" — locomotion stopped; required for low-level LowCmd_ publishing
-  - "mcf"      — Motion Control Framework variant; SportClient races with
-                 the onboard planner on some firmwares
-  - ""         — no controller active (robot falls if standing)
-
-Mode switching while a controller is running drops all 12 joint servos —
-ReleaseMode() / SelectMode() while upright will cause the robot to fall
-(incident 2026-04-11). Use stand_down_and_release() as the canonical safe
-path, or pass i_have_sat_the_robot=True to switch_mode() to bypass the gate.
+See data/notes/go2_firmware_modes.md for the reverse-engineering trail
+behind the Rage path + MotionSwitcher history.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
+import json
 import threading
 import time
 from typing import TYPE_CHECKING
 
+from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
+    MotionSwitcherClient,
+)
+from unitree_sdk2py.core.channel import (
+    ChannelFactoryInitialize,
+    ChannelPublisher,
+    ChannelSubscriber,
+)
+from unitree_sdk2py.go2.sport.sport_client import SportClient
+from unitree_sdk2py.idl.default import unitree_go_msg_dds__WirelessController_
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import (
+    SportModeState_,
+    WirelessController_,
+)
+
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
-    from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
-        MotionSwitcherClient,
-    )
-    from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
-    from unitree_sdk2py.go2.sport.sport_client import SportClient
-    from unitree_sdk2py.idl.unitree_go.msg.dds_ import (
-        LowCmd_,
-        LowState_,
-        SportModeState_,
-    )
-
     from dimos.hardware.drive_trains.registry import TwistBaseAdapterRegistry
 
 logger = setup_logger()
@@ -92,10 +75,8 @@ class _Session:
     latest_state: SportModeState_ | None = None
     enabled: bool = False
     locomotion_ready: bool = False
-    # Rage Mode joystick publisher (rt/wirelesscontroller_unprocessed path).
-    # When rage_active, rage_thread republishes rage_cmd at ~100Hz so the
-    # FsmRageMode policy reads our synthesized stick buffer instead of
-    # letting sbus_handle's idle zeros win the last-write-wins race.
+
+    # Rage Mode joystick publisher (rt/wirelesscontroller_unprocessed path)
     rage_active: bool = False
     rage_pub: ChannelPublisher | None = None
     rage_thread: threading.Thread | None = None
@@ -127,28 +108,28 @@ class UnitreeGo2TwistAdapter:
             connect(). Widens the forward envelope to ~2.5 m/s by
             routing velocity commands through the
             rt/wirelesscontroller_unprocessed joystick buffer rather
-            than SportClient.Move (which AiController's dispatch skips
-            for FsmRageMode — see data/notes/go2_firmware_modes.md).
-            Sign convention verified on our firmware: +ly = forward.
-            Pass False to stay on regular FreeWalk.
+            than SportClient.Move.
 
-    TODO(network_interface): multi-NIC hosts may need an explicit DDS
-    interface name passed through to ChannelFactoryInitialize(0, iface).
-    Dropped for now — current setup assumes exactly one Go2-reachable
-    NIC is up. Re-add as an adapter_kwarg (plumbed via
-    coordinator._create_twist_base_adapter) if/when DDS discovery
-    picks the wrong card.
+    TODO(network_interface): single-NIC assumption for now. Add an
+    explicit iface kwarg to ChannelFactoryInitialize(0, iface) if
+    discovery ever picks the wrong card on a multi-NIC host.
     """
 
-    # Firmware-variant fallbacks. "normal" is the canonical Go2 sport mode;
-    # the others are accepted as valid if the robot is already in them so we
-    # don't force a release (which would drop servo) just to match a name.
-    _SPORT_MODE_CANDIDATES: tuple[str, ...] = ("normal", "ai", "advanced", "mcf")
-
-    # Extended AI-controller API IDs served by mcf's libgo2_ai_module.so,
-    # not exposed in the public unitree_sdk2py. Extracted from the on-robot
-    # binary's .rodata — see data/notes/go2_firmware_modes.md.
+    # AI-controller API ID for the Rage Mode toggle.
     _SPORT_API_ID_RAGEMODE: int = 2059
+
+    # Rage velocity envelope (m/s, m/s, rad/s) from rage_mode_export_cfg.json.
+    _RAGE_UP_VX: float = 2.5
+    _RAGE_UP_VY: float = 1.0
+    _RAGE_UP_VYAW: float = 5.0
+
+    # Joystick publish rate. Must out-rate sbus_handle (~50Hz) for last-write-wins.
+    _RAGE_PUBLISH_HZ: float = 100.0
+
+    # Stick-axis sign flips. Defaults verified on Go2 Air vs ROS Twist convention.
+    _RAGE_LY_SIGN: float = 1.0  # vx → ly
+    _RAGE_LX_SIGN: float = -1.0  # vy → lx (ROS +y=left, Unitree +lx=right)
+    _RAGE_RX_SIGN: float = -1.0  # wz → rx (ROS +z=CCW, Unitree +rx=CW)
 
     def __init__(
         self,
@@ -164,30 +145,29 @@ class UnitreeGo2TwistAdapter:
         self._session_lock = threading.Lock()
         self._speed_level = speed_level
         self._rage_mode_default = rage_mode
+        # Tracks last-logged monotonic time for write_velocities guard warnings
+        # — the tick loop calls at 100 Hz, so a plain logger.warning would spam.
+        self._last_guard_warn_ts: float = 0.0
 
     # =========================================================================
     # TwistBaseAdapter protocol
     # =========================================================================
 
     def connect(self) -> bool:
-        """Connect to Go2, select a sport mode, stand up, enter FreeWalk.
+        """Connect to Go2, verify sport mode, stand up, enter FreeWalk.
 
         Sequence:
           1. ChannelFactoryInitialize(0) — default domain, default NIC.
           2. Subscribe rt/sportmodestate for telemetry.
-          3. MotionSwitcher.Init + _activate_sport_mode() — accepts
+          3. MotionSwitcher.Init + _verify_sport_mode_active() — accepts
              whatever controller is currently running.
           4. SportClient.Init.
           5. _initialize_locomotion(): StandUp + FreeWalk + SpeedLevel.
+          6. If rage_mode=True, set_rage_mode(True).
 
-        Fails fast on persistent 3102 (RPC_ERR_CLIENT_SEND) — logs
-        actionable guidance ("exit AI mode with L2+B, close Unitree app,
-        verify the host can see the Go2 on the network") rather than
-        silently proceeding.
-
-        Returns:
-            True on success. False on connect/init/locomotion failure.
-            Does not raise on missing SDK — logs and returns False.
+        Returns True on success, False on connect/init/locomotion
+        failure. On failure, logs guidance and the adapter stays in a
+        clean "not connected" state so a retry can succeed.
         """
         with self._session_lock:
             if self._session is not None:
@@ -195,16 +175,6 @@ class UnitreeGo2TwistAdapter:
                 return False
 
         try:
-            from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
-                MotionSwitcherClient,
-            )
-            from unitree_sdk2py.core.channel import (
-                ChannelFactoryInitialize,
-                ChannelSubscriber,
-            )
-            from unitree_sdk2py.go2.sport.sport_client import SportClient
-            from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_
-
             logger.info("[Go2] Initializing DDS (domain=0, default NIC)...")
             ChannelFactoryInitialize(0)
 
@@ -236,7 +206,7 @@ class UnitreeGo2TwistAdapter:
             with self._session_lock:
                 self._session = session
 
-            if not self._activate_sport_mode():
+            if not self._verify_sport_mode_active():
                 logger.error("[Go2] Failed to activate sport mode")
                 self.disconnect()
                 return False
@@ -280,10 +250,16 @@ class UnitreeGo2TwistAdapter:
         if session is None:
             return
 
+        # Stop the rage joystick publisher thread before tearing down
+        # SportClient / DDS resources — the thread reads session state.
+        self._stop_rage_joystick(session)
+
         try:
-            session.client.StopMove()
+            with session.lock:
+                session.client.StopMove()
             time.sleep(0.2)
-            session.client.StandDown()
+            with session.lock:
+                session.client.StandDown()
             time.sleep(0.3)
         except Exception as e:
             logger.error(f"[Go2] Error during disconnect: {e}")
@@ -353,12 +329,21 @@ class UnitreeGo2TwistAdapter:
                 return None
 
     def write_velocities(self, velocities: list[float]) -> bool:
-        """Send Twist command [vx, vy, wz] via SportClient.Move().
+        """Send a Twist command [vx, vy, wz] to the Go2.
+
+        When Rage Mode is active, the command is stashed in
+        session.rage_cmd and the 100 Hz joystick publisher thread picks
+        it up on its next tick (Rage's FSM ignores SportClient.Move).
+        Otherwise the command is forwarded directly via
+        SportClient.Move() → FsmFreeWalk.
 
         Refuses (returns False) if:
           - len(velocities) != 3
           - session not enabled (write_enable(True) not called)
           - locomotion not ready (StandUp/FreeWalk incomplete)
+
+        Guard warnings are rate-limited to 1 Hz since this is called
+        at 100 Hz from the tick loop.
         """
         if len(velocities) != 3:
             return False
@@ -366,26 +351,30 @@ class UnitreeGo2TwistAdapter:
         session = self._get_session()
 
         if not session.enabled:
-            logger.warning("[Go2] Not enabled, ignoring velocity command")
+            self._warn_guard("Not enabled, ignoring velocity command")
             return False
 
         if not session.locomotion_ready:
-            logger.warning("[Go2] Locomotion not ready, ignoring velocity command")
+            self._warn_guard("Locomotion not ready, ignoring velocity command")
             return False
 
         vx, vy, wz = velocities
 
         # When Rage is active, route through the wireless-controller
-        # joystick buffer (FsmRageMode reads from there; SetHighCmd
-        # dispatch is broken for it — see data/notes/go2_firmware_modes.md).
-        # We still call Move() on the SportClient side for compatibility
-        # with non-Rage FSMs the user may fall back to; it's a no-op
-        # under Rage.
+        # joystick buffer — see _rage_joystick_loop.
         if session.rage_active:
             session.rage_cmd = (vx, vy, wz)
             return True
 
         return self._send_velocity(vx, vy, wz)
+
+    def _warn_guard(self, msg: str) -> None:
+        """Rate-limited guard warning (at most once per second)."""
+        now = time.monotonic()
+        if now - self._last_guard_warn_ts < 1.0:
+            return
+        self._last_guard_warn_ts = now
+        logger.warning(f"[Go2] {msg}")
 
     def write_stop(self) -> bool:
         """Stop motion via SportClient.StopMove(). Leaves robot standing."""
@@ -450,174 +439,6 @@ class UnitreeGo2TwistAdapter:
             return (data.get("name") or "").strip()
         return None
 
-    def switch_mode(
-        self,
-        name: str,
-        *,
-        i_have_sat_the_robot: bool = False,
-    ) -> bool:
-        """Switch MotionSwitcher to `name` (normal/ai/advanced/mcf).
-
-        Refuses by default if a locomotion controller is running —
-        SelectMode/ReleaseMode drops all 12 joint servos, and the robot
-        falls if upright (incident 2026-04-11). The caller must either:
-
-          - Call stand_down_and_release() first, THEN switch_mode(name), or
-          - Pass i_have_sat_the_robot=True after verifying physically.
-
-        Does not rely on heuristic standing detection (position[2] or
-        foot_force are not reliable gates).
-
-        Returns True if the requested mode is active after the switch
-        (verified via CheckMode polling up to 5s).
-        """
-        session = self._get_session()
-        current = self.check_mode()
-
-        if current and not i_have_sat_the_robot:
-            logger.error(
-                f"[Go2] Refusing switch_mode('{name}'): controller '{current}' "
-                "is running. Releasing it would drop all 12 joint servos and "
-                "the robot would fall. Call stand_down_and_release() first, "
-                "or pass i_have_sat_the_robot=True after verifying physically."
-            )
-            return False
-
-        try:
-            # Release current controller (if any) before selecting a new one.
-            if current:
-                try:
-                    rel_code, _ = session.motion_switcher.ReleaseMode()
-                    logger.info(f"[Go2] ReleaseMode() -> {rel_code}")
-                except Exception as e:
-                    logger.warning(f"[Go2] ReleaseMode raised: {e}")
-                time.sleep(1.0)
-
-            if not name:
-                # Empty name = release only.
-                active = self._poll_mode(want_nonempty=False, timeout=5.0)
-                if active in ("", None):
-                    session.locomotion_ready = False
-                    session.enabled = False
-                    logger.info("[Go2] ✓ Mode released (no controller active)")
-                    return True
-                logger.error(f"[Go2] ReleaseMode did not take effect (still '{active}')")
-                return False
-
-            sel_code, _ = session.motion_switcher.SelectMode(name)
-            logger.info(f"[Go2] SelectMode('{name}') -> code={sel_code}")
-
-            if sel_code == 3102:
-                logger.error(f"[Go2] SelectMode('{name}') failed with RPC 3102")
-                return False
-
-            active = self._poll_mode(want_nonempty=True, timeout=5.0)
-            if active == name:
-                logger.info(f"[Go2] ✓ Switched to mode '{name}'")
-                session.locomotion_ready = False
-                session.enabled = False
-                time.sleep(2.0)
-                return True
-
-            logger.error(f"[Go2] SelectMode('{name}') did not take effect (active='{active}')")
-            return False
-
-        except Exception as e:
-            logger.error(f"[Go2] switch_mode error: {e}")
-            return False
-
-    def stand_down_and_release(self) -> bool:
-        """Canonical safe path from running locomotion to servo-free state.
-
-        Sequence:
-          1. StopMove() — zero velocity command.
-          2. StandDown() — robot sits.
-          3. Poll SportModeState.mode until damped/idle for >= 1s.
-          4. ReleaseMode() — controller stops, joints fully passive.
-
-        After this returns True, switch_mode('advanced') or low-level
-        publishing is safe. Returns False if any step fails; the robot
-        state on failure depends on which step failed — check the logs.
-        """
-        session = self._get_session()
-
-        try:
-            # Step 1: stop motion (best-effort; StopMove may fail if already
-            # stopped — not fatal).
-            try:
-                with session.lock:
-                    session.client.StopMove()
-            except Exception as e:
-                logger.warning(f"[Go2] StopMove raised during stand-down: {e}")
-            time.sleep(0.3)
-
-            # Step 2: stand down.
-            logger.info("[Go2] Standing down...")
-            try:
-                with session.lock:
-                    ret = session.client.StandDown()
-            except Exception as e:
-                logger.error(f"[Go2] StandDown raised: {e}")
-                return False
-            if ret != 0:
-                logger.error(f"[Go2] StandDown() failed with code {ret}")
-                return False
-
-            # Step 3: poll state.mode until it holds stable for >=1s. The
-            # specific `mode` integer is firmware-dependent; we only need
-            # to detect "no longer changing," which implies the controller
-            # has settled in the damped/idle posture.
-            deadline = time.monotonic() + 6.0
-            stable_since: float | None = None
-            last_mode: int | None = None
-            while time.monotonic() < deadline:
-                with session.lock:
-                    state = session.latest_state
-                if state is not None:
-                    try:
-                        m = int(state.mode)
-                    except Exception:
-                        m = None
-                    if m is not None and m == last_mode:
-                        if stable_since is None:
-                            stable_since = time.monotonic()
-                        elif time.monotonic() - stable_since >= 1.0:
-                            break
-                    else:
-                        stable_since = time.monotonic() if m is not None else None
-                        last_mode = m
-                time.sleep(0.1)
-            else:
-                logger.warning(
-                    "[Go2] state.mode did not stabilize within 6s; proceeding "
-                    "with ReleaseMode anyway"
-                )
-
-            # Step 4: release mode.
-            logger.info("[Go2] Releasing mode...")
-            try:
-                rel_code, _ = session.motion_switcher.ReleaseMode()
-                logger.info(f"[Go2] ReleaseMode() -> {rel_code}")
-            except Exception as e:
-                logger.error(f"[Go2] ReleaseMode raised: {e}")
-                return False
-
-            active = self._poll_mode(want_nonempty=False, timeout=5.0)
-            if active is None:
-                logger.warning("[Go2] CheckMode failed during release poll; assuming released")
-            elif active != "":
-                logger.error(f"[Go2] Release did not take effect (still '{active}')")
-                return False
-
-            session.locomotion_ready = False
-            session.enabled = False
-            logger.info("[Go2] ✓ Stood down and released — safe for mode switch / low-level")
-            return True
-
-        except Exception as e:
-            logger.error(f"[Go2] stand_down_and_release error: {e}")
-            return False
-
     def get_sport_state(self) -> SportModeState_ | None:
         """Return the latest SportModeState_ snapshot for diagnostics.
 
@@ -631,28 +452,21 @@ class UnitreeGo2TwistAdapter:
     def get_status(self) -> dict:
         """One-shot snapshot of adapter + robot state.
 
-        Does NOT raise if disconnected — returns a minimal dict instead.
-        Known mode list is documentation (the SDK's documented names), not
-        a probe of the specific firmware. Some firmwares ship without
-        'normal'; there is no non-disruptive way to detect that.
-
         Returns:
             {
               'connected': bool,
               'mode': str | None,          — current MotionSwitcher mode
               'enabled': bool,
               'locomotion_ready': bool,
+              'rage_active': bool,         — FsmRageMode enabled on mcf side
               'speed_level': int,
               'has_state': bool,           — first SportModeState received?
               'velocity': [vx, vy, wz] | None,
               'position': [x, y, theta] | None,
               'body_height': float | None,
               'sport_mode_num': int | None, — SportModeState.mode integer
-              'known_modes': tuple[str, ...],
             }
         """
-        known = self._SPORT_MODE_CANDIDATES
-
         with self._session_lock:
             session = self._session
 
@@ -662,13 +476,13 @@ class UnitreeGo2TwistAdapter:
                 "mode": None,
                 "enabled": False,
                 "locomotion_ready": False,
+                "rage_active": False,
                 "speed_level": self._speed_level,
                 "has_state": False,
                 "velocity": None,
                 "position": None,
                 "body_height": None,
                 "sport_mode_num": None,
-                "known_modes": known,
             }
 
         # Current mode via MotionSwitcher (cheap RPC; tolerate failure).
@@ -682,6 +496,7 @@ class UnitreeGo2TwistAdapter:
             state = session.latest_state
             enabled = session.enabled
             locomotion_ready = session.locomotion_ready
+            rage_active = session.rage_active
 
         velocity: list[float] | None = None
         position: list[float] | None = None
@@ -710,13 +525,13 @@ class UnitreeGo2TwistAdapter:
             "mode": mode,
             "enabled": enabled,
             "locomotion_ready": locomotion_ready,
+            "rage_active": rage_active,
             "speed_level": self._speed_level,
             "has_state": state is not None,
             "velocity": velocity,
             "position": position,
             "body_height": body_height,
             "sport_mode_num": sport_mode_num,
-            "known_modes": known,
         }
 
     def print_status(self) -> None:
@@ -724,11 +539,7 @@ class UnitreeGo2TwistAdapter:
         s = self.get_status()
 
         if not s["connected"]:
-            logger.info(
-                "[Go2] status: DISCONNECTED  "
-                f"(speed_level={s['speed_level']}, "
-                f"known_modes={list(s['known_modes'])})"
-            )
+            logger.info(f"[Go2] status: DISCONNECTED  (speed_level={s['speed_level']})")
             return
 
         mode_str = s["mode"] if s["mode"] is not None else "?"
@@ -743,56 +554,22 @@ class UnitreeGo2TwistAdapter:
             f"[Go2] status: CONNECTED  "
             f"mode='{mode_str}'  "
             f"enabled={s['enabled']}  locomotion_ready={s['locomotion_ready']}  "
+            f"rage={s['rage_active']}  "
             f"speed_level={s['speed_level']}  "
             f"sport_mode_num={s['sport_mode_num']}  "
             f"body_height={bh}  "
-            f"velocity={vel_str}  position={pos_str}  "
-            f"known_modes={list(s['known_modes'])}"
+            f"velocity={vel_str}  position={pos_str}"
         )
-
-    def reinit_in_mode(self, name: str) -> bool:
-        """Safely transition to `name` mode from any running state.
-
-        Does the full dance in one call:
-          1. StopMove + StandDown + poll until damped + ReleaseMode
-             (stand_down_and_release)
-          2. SelectMode(name) with i_have_sat_the_robot=True
-             (switch_mode)
-          3. StandUp + FreeWalk + SpeedLevel (_initialize_locomotion)
-
-        After this returns True, the adapter is enabled-ready in the
-        new mode — call write_enable(True) if you want to re-accept
-        write_velocities commands.
-
-        Returns False if any step fails. The robot will end up in a safe
-        sit/damped state in that case — check logs for the stage that
-        failed. The caller's session.enabled is cleared; call
-        write_enable(True) again if you want to resume commanding.
-        """
-        logger.info(f"[Go2] reinit_in_mode('{name}'): full stand-down → switch → relocomote")
-
-        if not self.stand_down_and_release():
-            logger.error(f"[Go2] reinit_in_mode('{name}'): stand_down_and_release failed")
-            return False
-
-        if not self.switch_mode(name, i_have_sat_the_robot=True):
-            logger.error(f"[Go2] reinit_in_mode('{name}'): switch_mode failed")
-            return False
-
-        if not self._initialize_locomotion():
-            logger.error(f"[Go2] reinit_in_mode('{name}'): _initialize_locomotion failed")
-            return False
-
-        logger.info(f"[Go2] ✓ reinit_in_mode('{name}') complete")
-        return True
 
     def set_speed_level(self, level: int) -> bool:
         """Set the SportClient speed envelope at runtime.
 
         Go2 SDK convention: -1 = slow, 0 = normal, 1 = fast (max).
-        Only reliably respected in 'normal' mode; mcf / ai controllers
-        may ignore it. Updates self._speed_level so subsequent
-        _initialize_locomotion() calls apply the same level.
+        Observed to return 0 on mcf firmware but the runtime effect is
+        unverified — Rage Mode's envelope (_RAGE_UP_VX etc.) is the
+        source of truth when Rage is active. Updates self._speed_level
+        so subsequent _initialize_locomotion() calls apply the same
+        level.
 
         Returns True if the RPC returned 0.
         """
@@ -831,8 +608,7 @@ class UnitreeGo2TwistAdapter:
         RC) and webrtc_bridge (mobile app) both write to.
 
         So enabling Rage does three things:
-          1. BalanceStand() to satisfy the FSM precondition (1002/1003
-             are the only states EventRageMode accepts from).
+          1. BalanceStand()
           2. _Call(2059, {"data": True}) — transition into FsmRageMode.
           3. SwitchJoystick(True) + start a 100 Hz publisher thread on
              rt/wirelesscontroller_unprocessed that republishes the
@@ -844,9 +620,13 @@ class UnitreeGo2TwistAdapter:
 
         Returns True if the 2059 toggle succeeded. The publisher thread
         is best-effort; publisher/SwitchJoystick failures are logged
-        but don't fail the call.
+        but don't fail the call. Idempotent — calling with the current
+        state returns True immediately without re-running the sequence.
         """
         session = self._get_session()
+
+        if session.rage_active == enable:
+            return True
 
         try:
             with session.lock:
@@ -881,33 +661,11 @@ class UnitreeGo2TwistAdapter:
         logger.info(f"[Go2] ✓ Rage Mode {'enabled' if enable else 'disabled'}")
         return True
 
-    # Rage velocity envelope from rage_mode_export_cfg.json — used to
-    # normalize (vx, vy, wz) to joystick axes in [-1, 1].
-    _RAGE_UP_VX: float = 2.5   # m/s
-    _RAGE_UP_VY: float = 1.0   # m/s
-    _RAGE_UP_VYAW: float = 5.0  # rad/s
-
-    # Publish rate for the synthesized joystick buffer. sbus_handle
-    # appears to publish at ~50Hz on idle; we out-rate it to win last-
-    # write-wins arbitration at the FSM's observation sample point.
-    _RAGE_PUBLISH_HZ: float = 100.0
-
-    # Sign conventions per stick axis. Defaults verified on our Go2 Air
-    # firmware against the ROS Twist convention (linear.y = left-positive,
-    # angular.z = CCW-positive). If a keyboard direction drives the
-    # robot the wrong way, flip the corresponding sign.
-    _RAGE_LY_SIGN: float = 1.0   # vx → ly: stick-up = +ly, forward
-    _RAGE_LX_SIGN: float = -1.0  # vy → lx: Unitree's +lx = right; ROS +y = left
-    _RAGE_RX_SIGN: float = -1.0  # wz → rx: Unitree's +rx = CW;    ROS +z = CCW
-
     def _start_rage_joystick(self, session: _Session) -> None:
         """Create the WirelessController publisher and spawn the 100Hz thread."""
         if session.rage_pub is not None:
             return
         try:
-            from unitree_sdk2py.core.channel import ChannelPublisher
-            from unitree_sdk2py.idl.unitree_go.msg.dds_ import WirelessController_
-
             pub = ChannelPublisher("rt/wirelesscontroller_unprocessed", WirelessController_)
             pub.Init()
             session.rage_pub = pub
@@ -951,8 +709,6 @@ class UnitreeGo2TwistAdapter:
         a WirelessController_ message. Exits when rage_stop is set or
         the session's publisher is torn down.
         """
-        from unitree_sdk2py.idl.default import unitree_go_msg_dds__WirelessController_
-
         period = 1.0 / self._RAGE_PUBLISH_HZ
         msg = unitree_go_msg_dds__WirelessController_()
         msg.keys = 0
@@ -989,8 +745,6 @@ class UnitreeGo2TwistAdapter:
 
         Returns True on RPC code 0. On failure, logs code + response.
         """
-        import json
-
         session = self._get_session()
         body = json.dumps(payload or {})
         try:
@@ -1007,39 +761,6 @@ class UnitreeGo2TwistAdapter:
         return True
 
     # =========================================================================
-    # Low-level stubs (defined but unwired — real impl in adapter_lowlevel.py)
-    # =========================================================================
-
-    def subscribe_low_state(self, callback: Callable[[LowState_], None]) -> bool:
-        """Subscribe to rt/lowstate with the given callback.
-
-        Stub in this adapter — returns False and logs a pointer to
-        UnitreeGo2LowLevelAdapter in adapter_lowlevel.py. The tick loop
-        does not need low-level state; this exists so advanced users can
-        reach raw joint telemetry through the same adapter handle if a
-        future tick-loop extension wants it. Kept as a stub so the main
-        adapter doesn't carry LowState_ import/DDS overhead.
-        """
-        logger.warning(
-            "[Go2] subscribe_low_state is a stub on UnitreeGo2TwistAdapter. "
-            "Use UnitreeGo2LowLevelAdapter for rt/lowstate access."
-        )
-        return False
-
-    def publish_low_cmd(self, cmd: LowCmd_) -> bool:
-        """Publish a single LowCmd_ on rt/lowcmd.
-
-        Stub in this adapter — use UnitreeGo2LowLevelAdapter for real
-        low-level control (it provides the watchdog, CRC handling, and
-        per-joint helpers that make LowCmd_ actually safe to use).
-        """
-        logger.warning(
-            "[Go2] publish_low_cmd is a stub on UnitreeGo2TwistAdapter. "
-            "Use UnitreeGo2LowLevelAdapter for rt/lowcmd publishing."
-        )
-        return False
-
-    # =========================================================================
     # Internal helpers
     # =========================================================================
 
@@ -1050,152 +771,53 @@ class UnitreeGo2TwistAdapter:
             raise RuntimeError("Go2 not connected")
         return session
 
-    def _activate_sport_mode(self) -> bool:
-        """Bring MotionSwitcher into a usable sport mode.
+    def _verify_sport_mode_active(self) -> bool:
+        """Accept whatever sport mode MotionSwitcher reports as running.
 
-        Logic:
-          1. CheckMode() with up to 6 retries on 3102 (DDS discovery race).
-          2. If persistent 3102: log guidance and return False.
-             (No "sportmodestate publishing so proceed anyway" fallback —
-             that masked real failures.)
-          3. If already in 'normal': return True.
-          4. If in another non-empty mode (ai/advanced/mcf): accept it
-             rather than releasing (would drop servo). Log a warning that
-             Move() may race with onboard controller.
-          5. If empty: try _SPORT_MODE_CANDIDATES in order, polling
-             CheckMode to confirm each SelectMode actually took effect.
+        Single CheckMode() call — the 1.5 s settle in connect() is our
+        DDS discovery wait. On any non-empty current mode, returns True;
+        we no longer auto-switch modes (see data/notes/go2_firmware_modes.md).
+
+        Returns False if MotionSwitcher is unreachable (3102) or reports
+        an empty mode — the caller must resolve (exit AI mode on the
+        remote, close the Unitree app, verify network).
         """
         session = self._get_session()
 
         try:
-            code: int | None = None
-            data: object = None
-            for attempt in range(1, 7):
-                try:
-                    code, data = session.motion_switcher.CheckMode()
-                except Exception as e:
-                    logger.warning(f"[Go2] CheckMode attempt {attempt} raised: {e}")
-                    code, data = None, None
-                logger.info(f"[Go2] CheckMode attempt {attempt} -> code={code} data={data}")
-                if code == 3102:
-                    time.sleep(1.0)
-                    continue
-                break
-
-            if code == 3102:
-                logger.error(
-                    "[Go2] MotionSwitcher unreachable (3102). Exit AI mode "
-                    "(L2+B on remote), close the Unitree app, and verify "
-                    "this host can reach the Go2 on the network."
-                )
-                return False
-
-            if code == 0 and isinstance(data, dict):
-                current = (data.get("name") or "").strip()
-                if current == "normal":
-                    logger.info("[Go2] Already in mode 'normal'")
-                    return True
-                if current:
-                    logger.warning(
-                        f"[Go2] In non-'normal' mode '{current}' (likely mcf). "
-                        "Move() may race with onboard controller. NOT "
-                        "auto-switching (robot would fall). To switch: "
-                        "stand_down_and_release() then switch_mode('normal', "
-                        "i_have_sat_the_robot=True)."
-                    )
-                    return True
-
-            # No mode active — try candidates.
-            for name in self._SPORT_MODE_CANDIDATES:
-                logger.info(f"[Go2] SelectMode('{name}')...")
-                try:
-                    sel_code, _ = session.motion_switcher.SelectMode(name)
-                except Exception as e:
-                    logger.warning(f"[Go2] SelectMode('{name}') raised: {e}")
-                    continue
-                logger.info(f"[Go2] SelectMode('{name}') -> code={sel_code}")
-
-                if sel_code == 3102:
-                    logger.error(
-                        "[Go2] SelectMode RPC failed (3102) — check network reachability to Go2."
-                    )
-                    return False
-
-                active = self._poll_mode(want_nonempty=True, timeout=4.0)
-                if active:
-                    logger.info(f"[Go2] ✓ Sport mode '{active}' active")
-                    time.sleep(2.0)
-                    return True
-
-                logger.warning(f"[Go2] SelectMode('{name}') did not activate — trying next")
-                try:
-                    session.motion_switcher.ReleaseMode()
-                except Exception:
-                    pass
-                time.sleep(0.5)
-
-            logger.error(
-                f"[Go2] None of {self._SPORT_MODE_CANDIDATES} activated. "
-                "Exit AI mode (L2+B), close the Unitree app."
-            )
-            return False
-
+            code, data = session.motion_switcher.CheckMode()
         except Exception as e:
-            logger.error(f"[Go2] _activate_sport_mode error: {e}")
+            logger.error(f"[Go2] CheckMode raised: {e}")
             return False
 
-    def _poll_mode(
-        self,
-        want_nonempty: bool = True,
-        timeout: float = 4.0,
-    ) -> str | None:
-        """Poll CheckMode() until the mode name becomes (non-)empty.
+        current = (data.get("name") or "").strip() if isinstance(data, dict) else ""
 
-        Returns the final name string (possibly empty) or None on RPC
-        failure. Used to confirm SelectMode / ReleaseMode transitions.
-        """
-        session = self._get_session()
-        deadline = time.monotonic() + timeout
-        last_name: str | None = None
-        while time.monotonic() < deadline:
-            try:
-                code, data = session.motion_switcher.CheckMode()
-                if code == 0 and isinstance(data, dict):
-                    last_name = (data.get("name") or "").strip()
-                    if want_nonempty and last_name:
-                        return last_name
-                    if not want_nonempty and not last_name:
-                        return last_name
-            except Exception:
-                pass
-            time.sleep(0.3)
-        return last_name
+        if current:
+            logger.info(f"[Go2] Sport mode '{current}' active")
+            return True
+
+        logger.error(
+            f"[Go2] No sport mode active (CheckMode code={code}, data={data}). "
+            "Exit AI mode (L2+B on remote), close the Unitree app, and verify "
+            "this host can reach the Go2 on the network."
+        )
+        return False
 
     def _initialize_locomotion(self) -> bool:
-        """StandUp (retry 3102) → 3s settle → FreeWalk → 2s settle.
+        """StandUp → 3s settle → FreeWalk → 2s settle → SpeedLevel.
 
         Called from connect() and from write_enable(True) if locomotion
-        was not yet ready. Assumes _activate_sport_mode() has already run.
+        was not yet ready. Assumes _verify_sport_mode_active() has already run.
         """
         session = self._get_session()
 
-        if not self._activate_sport_mode():
+        if not self._verify_sport_mode_active():
             return False
 
         try:
             logger.info("[Go2] Standing up...")
-            ret: int | None = None
-            for attempt in range(1, 6):
-                with session.lock:
-                    ret = session.client.StandUp()
-                if ret == 0:
-                    break
-                if ret == 3102:
-                    logger.warning(f"[Go2] StandUp attempt {attempt} got 3102, retrying")
-                    time.sleep(1.0)
-                    continue
-                break
-
+            with session.lock:
+                ret = session.client.StandUp()
             if ret != 0:
                 logger.error(f"[Go2] StandUp failed with code {ret}")
                 return False

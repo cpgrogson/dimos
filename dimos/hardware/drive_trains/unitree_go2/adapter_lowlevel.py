@@ -18,20 +18,14 @@ Standalone class — instantiated manually, NOT registered through the
 TwistBaseAdapterRegistry. The registry only auto-discovers modules named
 adapter.py, so this file is safely invisible to discovery.
 
-Firmware note:
-  Go2 low-level control works whenever NO sport controller is active
-  (MotionSwitcher CheckMode returns empty name). There is no required
-  "advanced" mode on Go2 — rt/lowcmd is listened to at the motor-
-  controller firmware layer, not gated by MotionSwitcher. An earlier
-  version of this file said SelectMode('advanced') was required; that
-  was incorrect and carried over from G1/H1 documentation. Empty mode
-  is sufficient.
-
 Prerequisites (the caller is responsible for these):
   1. Robot is sat down or damped before connect() is called.
-  2. MotionSwitcher is empty (no controller running). Use
-     UnitreeGo2TwistAdapter.stand_down_and_release() to get there
-     from any active mode ('normal', 'mcf', 'ai', etc.).
+  2. No sport controller is running — MotionSwitcher.CheckMode returns
+     an empty name. rt/lowcmd is accepted at the motor-controller
+     firmware layer regardless of MotionSwitcher; the "no active
+     controller" requirement is only to prevent a fight with whatever
+     mcf / normal / ai is already publishing. Release via the physical
+     RC (L2+A) or the Unitree app before connect().
 
 What this adapter does:
   - Publishes LowCmd_ on rt/lowcmd at up to 500 Hz, per-joint {q, dq, tau,
@@ -54,12 +48,20 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import TYPE_CHECKING
+
+from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
+    MotionSwitcherClient,
+)
+from unitree_sdk2py.core.channel import (
+    ChannelFactoryInitialize,
+    ChannelPublisher,
+    ChannelSubscriber,
+)
+from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_, LowState_
+from unitree_sdk2py.utils.crc import CRC
 
 from dimos.utils.logging_config import setup_logger
-
-if TYPE_CHECKING:
-    from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_, LowState_
 
 logger = setup_logger()
 
@@ -155,8 +157,9 @@ class UnitreeGo2LowLevelAdapter:
           1. ChannelFactoryInitialize(0) if assume_dds_initialized is False.
           2. Subscribe rt/lowstate → _on_lowstate() callback.
           3. Wait for first LowState_ message (timeout ~3s).
-          4. Verify MotionSwitcher mode is 'advanced' or empty. Refuse
-             with guidance if a locomotion controller is running.
+          4. Verify MotionSwitcher reports no active sport controller.
+             Refuse with guidance if one is running — we don't want to
+             fight mcf / normal / ai on the motor rail.
           5. Verify foot_force averages are near zero (robot is sat / damped).
              If not, refuse — publishing LowCmd_ to a standing robot whose
              controller just got killed will cause lurching.
@@ -168,16 +171,6 @@ class UnitreeGo2LowLevelAdapter:
         are torn down before returning.
         """
         try:
-            from unitree_sdk2py.comm.motion_switcher.motion_switcher_client import (
-                MotionSwitcherClient,
-            )
-            from unitree_sdk2py.core.channel import (
-                ChannelFactoryInitialize,
-                ChannelPublisher,
-                ChannelSubscriber,
-            )
-            from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_, LowState_
-
             if not self._assume_dds_initialized:
                 logger.info("[Go2 LowLevel] Initializing DDS (domain=0)...")
                 ChannelFactoryInitialize(0)
@@ -525,9 +518,8 @@ class UnitreeGo2LowLevelAdapter:
 
         logger.error(
             f"[Go2 LowLevel] Sport controller '{current}' is running — "
-            "low-level is unsafe. Call "
-            "UnitreeGo2TwistAdapter.stand_down_and_release() first so "
-            "CheckMode goes empty, then instantiate this adapter."
+            "low-level is unsafe. Release it via the physical RC (L2+A) or "
+            "the Unitree app so CheckMode returns an empty name, then retry."
         )
         return False
 
@@ -579,8 +571,6 @@ class UnitreeGo2LowLevelAdapter:
         """Construct a LowCmd_ with head/level_flag/gpio/bandwidth set to
         the values from Unitree's go2_stand_example.py reference. All 20
         motor slots start with mode=0 (disabled) and zero gains."""
-        from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
-
         cmd = unitree_go_msg_dds__LowCmd_()
         cmd.head[0] = 0xFE
         cmd.head[1] = 0xEF
@@ -603,8 +593,6 @@ class UnitreeGo2LowLevelAdapter:
         state that is not thread-safe).
         """
         if self._crc_helper is None:
-            from unitree_sdk2py.utils.crc import CRC
-
             self._crc_helper = CRC()
         cmd.crc = self._crc_helper.Crc(cmd)
         return cmd.crc
