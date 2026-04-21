@@ -205,3 +205,62 @@ class TestMessageToChoiceLambda:
 
         msg2 = TwitchMessage(content="hello")
         assert _default_message_to_choice(msg2, choices) is None
+
+
+# ── Vote deduplication ──
+
+
+class TestVoteDeduplication:
+    """Test the deduplication logic used in TwitchVotes._vote_loop."""
+
+    def test_latest_vote_per_voter_wins(self) -> None:
+        """When a voter changes their mind, only their latest vote counts."""
+        # Simulates the dedup logic from _vote_loop
+        votes = [
+            ("forward", NOW, "alice"),
+            ("back", NOW + 1, "alice"),  # alice changed mind
+            ("forward", NOW, "bob"),
+        ]
+        # Dedup: keep latest per voter
+        latest_per_voter: dict[str, tuple[str, float, str]] = {}
+        for vote in votes:
+            latest_per_voter[vote[2]] = vote
+        deduped = list(latest_per_voter.values())
+
+        result = _tally_plurality(deduped)
+        # alice=back, bob=forward → tie; either is valid
+        assert result in ("forward", "back")
+        # But alice's final vote was "back"
+        assert ("back", NOW + 1, "alice") in deduped
+        assert ("forward", NOW, "alice") not in deduped
+
+    def test_single_voter_multiple_votes(self) -> None:
+        """A single voter spamming should only get one vote."""
+        votes = [
+            ("forward", NOW, "spammer"),
+            ("forward", NOW + 1, "spammer"),
+            ("forward", NOW + 2, "spammer"),
+            ("back", NOW, "other"),
+        ]
+        latest_per_voter: dict[str, tuple[str, float, str]] = {}
+        for vote in votes:
+            latest_per_voter[vote[2]] = vote
+        deduped = list(latest_per_voter.values())
+
+        # 1 vote forward (spammer's latest), 1 vote back (other) → tie
+        assert len(deduped) == 2
+
+    def test_no_dedup_different_voters(self) -> None:
+        """Different voters all get their votes counted."""
+        votes = [
+            ("forward", NOW, "a"),
+            ("forward", NOW, "b"),
+            ("back", NOW, "c"),
+        ]
+        latest_per_voter: dict[str, tuple[str, float, str]] = {}
+        for vote in votes:
+            latest_per_voter[vote[2]] = vote
+        deduped = list(latest_per_voter.values())
+
+        assert len(deduped) == 3
+        assert _tally_plurality(deduped) == "forward"

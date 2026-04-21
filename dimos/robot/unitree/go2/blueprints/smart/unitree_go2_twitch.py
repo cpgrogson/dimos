@@ -23,31 +23,40 @@ Usage::
 
 from __future__ import annotations
 
+import threading
 import time
 
 from unitree_webrtc_connect.constants import RTC_TOPIC, SPORT_CMD
 
-from dimos.core.blueprints import autoconnect
+from dimos.core.coordination.blueprints import autoconnect
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
 from dimos.core.stream import In, Out
 from dimos.msgs.geometry_msgs.Twist import Twist
-from dimos.robot.unitree.go2.blueprints.basic.unitree_go2_basic import unitree_go2_basic
+from dimos.robot.unitree.go2.connection import GO2Connection
 from dimos.robot.unitree.go2.connection_spec import GO2ConnectionSpec
 from dimos.stream.twitch.votes import TwitchChoice, TwitchVotes
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
 
+DRIVE_SPEED = 0.3  # m/s
+TURN_SPEED = 0.5  # rad/s
+COMMAND_DURATION = 1.0  # seconds
+
 
 class _ChoiceToCmdVel(Module):
     config: ModuleConfig
-    command_duration: float = 1.0
 
     chat_vote_choice: In[TwitchChoice]
     cmd_vel: Out[Twist]
 
     _connection: GO2ConnectionSpec
+
+    def __init__(self, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._is_sitting = False
+        self._exec_lock = threading.Lock()
 
     @rpc
     def start(self) -> None:
@@ -55,43 +64,62 @@ class _ChoiceToCmdVel(Module):
         self.chat_vote_choice.subscribe(self._on_choice)
 
     def _on_choice(self, choice: TwitchChoice) -> None:
-        logger.info("[TwitchPlays] Executing: %s", choice.winner)
+        # Run command execution on a separate thread to avoid blocking the callback
+        threading.Thread(
+            target=self._execute_choice,
+            args=(choice,),
+            daemon=True,
+            name="twitch-exec",
+        ).start()
 
-        if choice.winner == "sit":
-            self._do_sport_command("Sit")
-            return
-        elif choice.winner == "stand":
-            self._do_sport_command("StandUp")
-            return
+    def _execute_choice(self, choice: TwitchChoice) -> None:
+        with self._exec_lock:
+            logger.info("[TwitchPlays] Executing: %s", choice.winner)
 
-        t = Twist()
-        if choice.winner == "forward":
-            t.linear.x = 0.3
-        elif choice.winner == "back":
-            t.linear.x = -0.3
-        elif choice.winner == "left":
-            t.angular.z = 0.5
-        elif choice.winner == "right":
-            t.angular.z = -0.5
+            if choice.winner == "stop":
+                self.cmd_vel.publish(Twist())
+                return
+            elif choice.winner == "sit":
+                self._do_sport_command("Sit")
+                self._is_sitting = True
+                return
+            elif choice.winner == "stand":
+                self._do_sport_command("StandUp")
+                self._is_sitting = False
+                return
 
-        end = time.time() + self.command_duration
-        while time.time() < end:
-            self.cmd_vel.publish(t)
-            time.sleep(0.1)
+            # Auto-stand before any movement command
+            if self._is_sitting:
+                logger.info("[TwitchPlays] Auto-standing before movement")
+                self._do_sport_command("StandUp")
+                self._is_sitting = False
+                time.sleep(1.0)
 
-        self.cmd_vel.publish(Twist())
+            t = Twist()
+            if choice.winner == "forward":
+                t.linear.x = DRIVE_SPEED
+            elif choice.winner == "back":
+                t.linear.x = -DRIVE_SPEED
+            elif choice.winner == "left":
+                t.angular.z = TURN_SPEED
+            elif choice.winner == "right":
+                t.angular.z = -TURN_SPEED
+
+            end = time.time() + COMMAND_DURATION
+            while time.time() < end:
+                self.cmd_vel.publish(t)
+                time.sleep(0.1)
+
+            self.cmd_vel.publish(Twist())
 
     def _do_sport_command(self, command_name: str) -> None:
         api_id = SPORT_CMD[command_name]
         logger.info("[TwitchPlays] Sport command: %s (api_id=%d)", command_name, api_id)
-        try:
-            self._connection.publish_request(RTC_TOPIC["SPORT_MOD"], {"api_id": api_id})
-        except Exception:
-            logger.exception("[TwitchPlays] Failed to execute %s", command_name)
+        self._connection.publish_request(RTC_TOPIC["SPORT_MOD"], {"api_id": api_id})
 
 
 unitree_go2_twitch = autoconnect(
-    unitree_go2_basic,
+    GO2Connection.blueprint(),
     TwitchVotes.blueprint(
         vote_window_seconds=5.0,
         vote_mode="plurality",

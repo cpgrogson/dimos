@@ -76,7 +76,7 @@ ANGLE_STEP = 5.0  # floor turn angles to this increment
 NO_NUMBER_DEFAULT_DEG = 90.0  # "turn left" with no number
 FALLBACK_TURN_DEG = 20.0  # used when all turn votes have invalid angles
 YAW_MARGIN_DEG = 5.0
-LEV_MAX_EDITS = 3
+LEV_MAX_EDITS = 2
 TURN_TIMEOUT_SECONDS = 30.0
 CMD_VEL_PUBLISH_HZ = 20.0
 
@@ -189,6 +189,7 @@ class TwitchPlaysGo2(Module):
         self._lock = threading.Lock()
         self._votes: list[tuple[str, float | None]] = []
         self._latest_yaw: float | None = None
+        self._is_sitting = False
         self._stop_event = threading.Event()
         self._vote_thread: threading.Thread | None = None
 
@@ -213,7 +214,8 @@ class TwitchPlaysGo2(Module):
         super().stop()
 
     def _on_odom(self, pose: PoseStamped) -> None:
-        self._latest_yaw = pose.orientation.euler.yaw
+        with self._lock:
+            self._latest_yaw = pose.orientation.euler.yaw
 
     def _on_message(self, msg: TwitchMessage) -> None:
         category = _categorize(msg.content)
@@ -222,6 +224,14 @@ class TwitchPlaysGo2(Module):
         angle = _parse_turn_angle(msg.content) if category == "turn" else None
         with self._lock:
             self._votes.append((category, angle))
+
+    def _auto_stand_if_sitting(self) -> None:
+        """Issue StandUp if the robot is currently sitting."""
+        if self._is_sitting:
+            logger.info("[TwitchPlaysGo2] Auto-standing before movement")
+            self._do_sport_command("StandUp")
+            self._is_sitting = False
+            time.sleep(1.0)
 
     def _vote_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -235,17 +245,23 @@ class TwitchPlaysGo2(Module):
             winner = counts.most_common(1)[0][0]
             logger.info("[TwitchPlaysGo2] Winner: %s (tally=%s)", winner, dict(counts))
             if winner == "forward":
+                self._auto_stand_if_sitting()
                 self._drive_linear(LINEAR_SPEED)
             elif winner == "back":
+                self._auto_stand_if_sitting()
                 self._drive_linear(-LINEAR_SPEED)
             elif winner == "turn":
+                self._auto_stand_if_sitting()
                 self._do_turn([a for c, a in votes if c == "turn" and a is not None])
             elif winner == "jump":
+                self._auto_stand_if_sitting()
                 self._do_sport_command("FrontJump")
             elif winner == "sit":
                 self._do_sport_command("Sit")
+                self._is_sitting = True
             elif winner == "stand":
                 self._do_sport_command("StandUp")
+                self._is_sitting = False
 
     def _do_sport_command(self, command_name: str) -> None:
         api_id = SPORT_CMD[command_name]
@@ -280,11 +296,13 @@ class TwitchPlaysGo2(Module):
             len(valid_angles),
         )
 
-        if self._latest_yaw is None:
+        with self._lock:
+            yaw = self._latest_yaw
+        if yaw is None:
             logger.warning("[TwitchPlaysGo2] No odom yaw yet — skipping turn")
             return
 
-        start_yaw = self._latest_yaw
+        start_yaw = yaw
         # ROS convention: +angular.z = counter-clockwise (left). Our target_deg
         # convention: positive = right, so flip the sign.
         angular_z = ANGULAR_SPEED if target_deg < 0 else -ANGULAR_SPEED
@@ -298,9 +316,11 @@ class TwitchPlaysGo2(Module):
         while time.time() < deadline and not self._stop_event.is_set():
             self.cmd_vel.publish(t)
             time.sleep(period)
-            if self._latest_yaw is None:
+            with self._lock:
+                yaw = self._latest_yaw
+            if yaw is None:
                 continue
-            delta = abs(_wrap_angle(self._latest_yaw - start_yaw))
+            delta = abs(_wrap_angle(yaw - start_yaw))
             if delta >= abs_target_rad - margin_rad:
                 break
         self.cmd_vel.publish(Twist())

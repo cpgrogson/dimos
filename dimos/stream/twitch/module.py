@@ -29,7 +29,41 @@ import threading
 import time
 from typing import Any
 
-from twitchio.ext import commands as twitch_commands
+try:
+    import twitchio  # type: ignore[import-untyped]
+    from twitchio.ext import commands as twitch_commands  # type: ignore[import-untyped]
+except ImportError:
+    raise ImportError(
+        "[TwitchChat] The 'twitchio' package is not installed.\n"
+        "Install it with:\n"
+        "    uv pip install 'twitchio>=2.0,<3.0'\n"
+        "or:\n"
+        "    pip install 'twitchio>=2.0,<3.0'"
+    ) from None
+
+_twitchio_version = getattr(twitchio, "__version__", "unknown")
+try:
+    _twitchio_major = int(str(_twitchio_version).split(".")[0])
+except (ValueError, IndexError):
+    _twitchio_major = -1
+
+if _twitchio_major >= 3:
+    raise ImportError(
+        f"[TwitchChat] twitchio v{_twitchio_version} is installed, but DimOS requires twitchio 2.x.\n"
+        "twitchio 3.x has a completely different API and is not compatible.\n"
+        "Downgrade with:\n"
+        "    uv pip install 'twitchio>=2.0,<3.0'\n"
+        "or:\n"
+        "    pip install 'twitchio>=2.0,<3.0'"
+    )
+if _twitchio_major < 2 and _twitchio_major != -1:
+    raise ImportError(
+        f"[TwitchChat] twitchio v{_twitchio_version} is installed, but DimOS requires twitchio 2.x.\n"
+        "Upgrade with:\n"
+        "    uv pip install 'twitchio>=2.0,<3.0'\n"
+        "or:\n"
+        "    pip install 'twitchio>=2.0,<3.0'"
+    )
 
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
@@ -105,7 +139,6 @@ class TwitchChat(Module):
     @rpc
     def start(self) -> None:
         super().start()
-        self._check_twitchio_installed()
 
         token = (
             self.config.twitch_token
@@ -145,43 +178,6 @@ class TwitchChat(Module):
         )
         self._bot_thread.start()
         logger.info("[TwitchChat] Started", channel=channel)
-
-    def _check_twitchio_installed(self) -> None:
-        """Validate twitchio is installed and is a compatible version (v2.x)."""
-        try:
-            import twitchio
-        except ImportError:
-            raise ImportError(
-                "[TwitchChat] The 'twitchio' package is not installed.\n"
-                "Install it with:\n"
-                "    uv pip install 'twitchio>=2.0,<3.0'\n"
-                "or:\n"
-                "    pip install 'twitchio>=2.0,<3.0'"
-            ) from None
-
-        version = getattr(twitchio, "__version__", "unknown")
-        try:
-            major = int(str(version).split(".")[0])
-        except (ValueError, IndexError):
-            major = -1
-
-        if major >= 3:
-            raise ImportError(
-                f"[TwitchChat] twitchio v{version} is installed, but DimOS requires twitchio 2.x.\n"
-                "twitchio 3.x has a completely different API and is not compatible.\n"
-                "Downgrade with:\n"
-                "    uv pip install 'twitchio>=2.0,<3.0'\n"
-                "or:\n"
-                "    pip install 'twitchio>=2.0,<3.0'"
-            )
-        if major < 2 and major != -1:
-            raise ImportError(
-                f"[TwitchChat] twitchio v{version} is installed, but DimOS requires twitchio 2.x.\n"
-                "Upgrade with:\n"
-                "    uv pip install 'twitchio>=2.0,<3.0'\n"
-                "or:\n"
-                "    pip install 'twitchio>=2.0,<3.0'"
-            )
 
     def _run_bot_loop(self, token: str, channel: str) -> None:
         assert self._bot_loop is not None

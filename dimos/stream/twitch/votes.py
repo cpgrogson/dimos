@@ -60,9 +60,9 @@ def _default_message_to_choice(msg: TwitchMessage, choices: list[str]) -> str | 
 
 class TwitchVotesConfig(TwitchChatConfig):
     # A vote is only counted if message_to_choice returns one of these.
-    choices: list[str] = ["forward", "back", "left", "right", "stop", "sit", "stand"]
-    # (msg, choices) -> choice string, or any falsy value to skip
-    message_to_choice: Callable[[TwitchMessage, list[str]], Any] = _default_message_to_choice
+    choices: list[str] = []
+    # (msg, choices) -> choice string, or None to skip
+    message_to_choice: Callable[[TwitchMessage, list[str]], str | None] = _default_message_to_choice
 
     vote_window_seconds: float = 5.0
     min_votes_threshold: int = 1
