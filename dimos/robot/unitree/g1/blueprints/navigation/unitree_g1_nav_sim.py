@@ -86,8 +86,8 @@ unitree_g1_nav_sim = (
                 "min_relative_z": -1.5,
             },
             local_planner={
-                "max_speed": 2.0,
-                "autonomy_speed": 2.0,
+                "max_speed": 1.0,
+                "autonomy_speed": 1.0,
                 "obstacle_height_threshold": 0.1,
                 "max_relative_z": 0.3,
                 "min_relative_z": -1.5,
@@ -95,9 +95,9 @@ unitree_g1_nav_sim = (
                 "two_way_drive": False,
             },
             path_follower={
-                "max_speed": 2.0,
-                "autonomy_speed": 2.0,
-                "max_acceleration": 4.0,
+                "max_speed": 1.0,
+                "autonomy_speed": 1.0,
+                "max_acceleration": 1.0,
                 "slow_down_distance_threshold": 0.5,
                 "omni_dir_goal_threshold": 0.5,
                 "two_way_drive": False,

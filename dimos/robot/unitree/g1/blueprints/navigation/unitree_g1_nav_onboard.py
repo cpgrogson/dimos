@@ -70,6 +70,14 @@ unitree_g1_nav_onboard = (
                 "obstacle_height_threshold": 0.01,
                 "ground_height_threshold": 0.01,
             },
+            local_planner={
+                "max_speed": 0.5,
+                "autonomy_speed": 0.5,
+            },
+            path_follower={
+                "max_speed": 0.5,
+                "autonomy_speed": 0.5,
+            },
             simple_planner={
                 "cell_size": 0.3,
                 "obstacle_height_threshold": 0.20,
