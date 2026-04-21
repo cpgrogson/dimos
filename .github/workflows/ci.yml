@@ -50,19 +50,19 @@ jobs:
       - name: Run tests with coverage
         if: github.event_name == 'push'
         run: |
-          /entrypoint.sh bash -c "source .venv/bin/activate && _DIMOS_COV=1 coverage run -m pytest --durations=0 -m 'not (tool or mujoco)' && coverage combine && coverage html && coverage report"
+          /entrypoint.sh bash -c "source .venv/bin/activate && _DIMOS_COV=1 coverage run -m pytest --durations=0 -m 'not (tool or mujoco)' && coverage combine && coverage xml && coverage report"
 
       - name: Run mypy
         if: ${{ !cancelled() }}
         run: |
           /entrypoint.sh bash -c "source .venv/bin/activate && MYPYPATH=/opt/ros/humble/lib/python3.10/site-packages mypy dimos"
 
-      - name: Upload coverage report
+      - name: Upload coverage to Codecov
         if: github.event_name == 'push' && !cancelled()
-        uses: actions/upload-artifact@v5
+        uses: codecov/codecov-action@v5
         with:
-          name: coverage-report
-          path: htmlcov/
+          files: coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Check disk space
         if: failure()
