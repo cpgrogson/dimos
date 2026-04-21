@@ -55,6 +55,7 @@ def smart_nav(
     use_terrain_map_ext: bool = True,
     use_simple_planner: bool = False,
     vehicle_height: float | None = None,
+    max_speed: float | None = None,
     terrain_analysis: dict[str, Any] | None = None,
     terrain_map_ext: dict[str, Any] | None = None,
     local_planner: dict[str, Any] | None = None,
@@ -93,6 +94,9 @@ def smart_nav(
             accumulator used for visualization and wider-range planning.
         vehicle_height: Ignore terrain points above this height (m). Threaded
             into TerrainAnalysis's `vehicle_height` config. Defaults to 1.2m.
+        max_speed: Cap peak velocity (m/s) on both LocalPlanner (planning) and
+            PathFollower (execution). Sets `max_speed` and `autonomy_speed` on
+            both modules. Per-module overrides still win.
         terrain_analysis, terrain_map_ext, local_planner, path_follower,
         far_planner, pgo, movement_manager, tare_planner:
         Per-module config override dicts. Merged on top
@@ -161,8 +165,8 @@ def smart_nav(
             **{
                 "autonomy_mode": True,
                 "use_terrain_analysis": True,
-                "max_speed": 1.0,
-                "autonomy_speed": 1.0,
+                "max_speed": 1.0 if max_speed is None else max_speed,
+                "autonomy_speed": 1.0 if max_speed is None else max_speed,
                 "obstacle_height_threshold": 0.1,
                 "max_relative_z": 0.3,
                 "min_relative_z": -0.4,
@@ -173,8 +177,8 @@ def smart_nav(
         PathFollower.blueprint(
             **{
                 "autonomy_mode": True,
-                "max_speed": 1.0,
-                "autonomy_speed": 1.0,
+                "max_speed": 1.0 if max_speed is None else max_speed,
+                "autonomy_speed": 1.0 if max_speed is None else max_speed,
                 "max_acceleration": 1.0,
                 "slow_down_distance_threshold": 1.0,
                 "omni_dir_goal_threshold": 1.0,

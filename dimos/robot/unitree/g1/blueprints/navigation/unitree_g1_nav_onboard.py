@@ -43,9 +43,9 @@ from __future__ import annotations
 import os
 
 from dimos.core.coordination.blueprints import autoconnect
+from dimos.core.global_config import global_config
 from dimos.hardware.sensors.lidar.fastlio2.module import FastLio2
 from dimos.navigation.smart_nav.main import smart_nav, smart_nav_rerun_config
-from dimos.core.global_config import global_config
 from dimos.robot.unitree.g1.config import G1
 from dimos.robot.unitree.g1.effectors.high_level.dds_sdk import G1HighLevelDdsSdk
 from dimos.robot.unitree.g1.g1_rerun import (
@@ -66,6 +66,7 @@ unitree_g1_nav_onboard = (
         smart_nav(
             use_simple_planner=True,
             vehicle_height=G1.height_clearance,
+            max_speed=0.5,
             terrain_analysis={
                 "obstacle_height_threshold": 0.01,
                 "ground_height_threshold": 0.01,
