@@ -1823,6 +1823,7 @@ dds = [
     { name = "lxml-stubs" },
     { name = "md-babel-py" },
     { name = "mypy" },
+    { name = "openai-whisper" },
     { name = "pandas-stubs" },
     { name = "pre-commit" },
     { name = "py-spy" },
@@ -1863,6 +1864,7 @@ dev = [
     { name = "lxml-stubs" },
     { name = "md-babel-py" },
     { name = "mypy" },
+    { name = "openai-whisper" },
     { name = "pandas-stubs" },
     { name = "pre-commit" },
     { name = "py-spy" },
@@ -2090,6 +2092,7 @@ requires-dist = [
     { name = "open3d-unofficial-arm", marker = "platform_machine == 'aarch64' and sys_platform == 'linux'" },
     { name = "open3d-unofficial-arm", marker = "platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'docker'" },
     { name = "openai", marker = "extra == 'agents'" },
+    { name = "openai-whisper", marker = "extra == 'dev'" },
     { name = "opencv-contrib-python", marker = "extra == 'misc'", specifier = "==4.10.0.84" },
     { name = "opencv-python" },
     { name = "opencv-python-headless", marker = "extra == 'docker'" },
@@ -5105,6 +5108,15 @@ wheels = [
 ]
 
 [[package]]
+name = "more-itertools"
+version = "11.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/f7/139d22fef48ac78127d18e01d80cf1be40236ae489769d17f35c3d425293/more_itertools-11.0.2.tar.gz", hash = "sha256:392a9e1e362cbc106a2457d37cabf9b36e5e12efd4ebff1654630e76597df804", size = 144659, upload-time = "2026-04-09T15:01:33.297Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/98/6af411189d9413534c3eb691182bff1f5c6d44ed2f93f2edfe52a1bbceb8/more_itertools-11.0.2-py3-none-any.whl", hash = "sha256:6e35b35f818b01f691643c6c611bc0902f2e92b46c18fffa77ae1e7c46e912e4", size = 71939, upload-time = "2026-04-09T15:01:32.21Z" },
+]
+
+[[package]]
 name = "mosek"
 version = "11.0.24"
 source = { registry = "https://pypi.org/simple" }
@@ -6106,6 +6118,22 @@ sdist = { url = "https://files.pythonhosted.org/packages/92/e5/3d197a0947a166649
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/56/0a89092a453bb2c676d66abee44f863e742b2110d4dbb1dbcca3f7e5fc33/openai-2.21.0-py3-none-any.whl", hash = "sha256:0bc1c775e5b1536c294eded39ee08f8407656537ccc71b1004104fe1602e267c", size = 1103065, upload-time = "2026-02-14T00:11:59.603Z" },
 ]
+
+[[package]]
+name = "openai-whisper"
+version = "20250625"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "more-itertools" },
+    { name = "numba" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "tiktoken" },
+    { name = "torch" },
+    { name = "tqdm" },
+    { name = "triton", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or sys_platform == 'linux2'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/35/8e/d36f8880bcf18ec026a55807d02fe4c7357da9f25aebd92f85178000c0dc/openai_whisper-20250625.tar.gz", hash = "sha256:37a91a3921809d9f44748ffc73c0a55c9f366c85a3ef5c2ae0cc09540432eb96", size = 803191, upload-time = "2025-06-26T01:06:13.34Z" }
 
 [[package]]
 name = "opencv-contrib-python"
