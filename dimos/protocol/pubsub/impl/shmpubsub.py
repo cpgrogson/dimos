@@ -323,7 +323,7 @@ class ShmSubset:
         from dimos.protocol.pubsub.impl.shmpubsub import ShmSubset
 
         bridge = RerunBridgeModule(
-            pubsubs=[LCM(), ShmSubset(topics=[("color_image", 6220800, "pickle")])],
+            pubsubs=[LCM(), ShmSubset(topics=[("/color_image", 6220800, "pickle")])],
         )
 
     Each topic entry is ``(name, capacity, encoding)`` where encoding is
