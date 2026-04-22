@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Probe an OpenArm on a SocketCAN interface.
 
-Enumerates all 8 expected Damiao motors (7 arm joints + gripper) on one CAN-FD
-bus, enables each, reads back one state frame, then disables. This is the
-Phase-0 hardware-verification script — if this does not work, nothing
-downstream will.
+Enumerates all 8 expected Damiao motors (7 arm joints + gripper) on one CAN bus
+(classical by default, use --fd for CAN-FD), enables each, reads back one state
+frame, then disables. Phase-0 hardware-verification script.
 
 Run AFTER bringing the bus up with dimos/robot/manipulators/openarm/scripts/openarm_can_up.sh.
 
@@ -46,7 +45,7 @@ DEFAULT_MOTORS: list[tuple[int, str]] = [
 ENABLE  = bytes([0xFF] * 7 + [0xFC])
 DISABLE = bytes([0xFF] * 7 + [0xFD])
 
-FD = True  # set by --classical at runtime
+FD = False  # set by --fd at runtime; defaults to classical CAN @ 1 Mbit
 
 
 def uint_to_float(x: int, lo: float, hi: float, bits: int) -> float:
