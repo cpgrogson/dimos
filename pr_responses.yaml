@@ -1,0 +1,26 @@
+- pr: 1716
+  comment_id: 3012701447
+  author: greptile-apps[bot]
+  file: dimos/visualization/rerun/bridge.py
+  line: 274
+  problem: "assert is silently stripped with -O flag; use ValueError instead for runtime input validation"
+  solution: "Replaced assert with explicit ValueError raise for topic validation."
+  commit: f077eae04
+
+- pr: 1716
+  comment_id: 3012701499
+  author: greptile-apps[bot]
+  file: dimos/protocol/pubsub/impl/shmpubsub.py
+  line: 326
+  problem: "Docstring example omits required leading slash — will trigger assertion error if copied verbatim"
+  solution: "Added leading slash to example: 'color_image' -> '/color_image'."
+  commit: d8c8e539e
+
+- pr: 1716
+  comment_id: 3012701541
+  author: greptile-apps[bot]
+  file: dimos/core/transport.py
+  line: 173
+  problem: "Pickle round-trip allocates a wasted SHM object during __reduce__/__setstate__ unpickling"
+  solution: "Minor optimization. The redundant allocation during unpickling is a known trade-off — the object is small and short-lived. Not worth the added complexity of a __new__-based reconstruct helper for this use case."
+  commit: null
