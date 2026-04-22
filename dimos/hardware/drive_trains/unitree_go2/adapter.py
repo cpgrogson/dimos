@@ -95,24 +95,8 @@ class UnitreeGo2TwistAdapter:
     Thread model:
       - _session_lock guards the self._session reference across threads.
       - session.lock guards latest_state and SportClient RPC serialization.
-      Never take _session_lock while holding session.lock — the DDS callback
+      Never take _session_lock while holding session.lock - the DDS callback
       already holds session.lock briefly during state updates.
-
-    Args:
-        dof: Must be 3 for Go2. ValueError otherwise.
-        speed_level: SportClient speed envelope. -1 = slow, 0 = normal,
-            1 = fast (default, max). Applied once after FreeWalk succeeds.
-            Rage Mode's envelope (_RAGE_UP_VX etc.) overrides this when
-            rage is on. Change at runtime via set_speed_level().
-        rage_mode: If True (default), enable Rage Mode at the end of
-            connect(). Widens the forward envelope to ~2.5 m/s by
-            routing velocity commands through the
-            rt/wirelesscontroller_unprocessed joystick buffer rather
-            than SportClient.Move.
-
-    TODO(network_interface): single-NIC assumption for now. Add an
-    explicit iface kwarg to ChannelFactoryInitialize(0, iface) if
-    discovery ever picks the wrong card on a multi-NIC host.
     """
 
     # AI-controller API ID for the Rage Mode toggle.
@@ -145,13 +129,7 @@ class UnitreeGo2TwistAdapter:
         self._session_lock = threading.Lock()
         self._speed_level = speed_level
         self._rage_mode_default = rage_mode
-        # Tracks last-logged monotonic time for write_velocities guard warnings
-        # — the tick loop calls at 100 Hz, so a plain logger.warning would spam.
         self._last_guard_warn_ts: float = 0.0
-
-    # =========================================================================
-    # TwistBaseAdapter protocol
-    # =========================================================================
 
     def connect(self) -> bool:
         """Connect to Go2, verify sport mode, stand up, enter FreeWalk.
@@ -175,17 +153,12 @@ class UnitreeGo2TwistAdapter:
                 return False
 
         try:
-            logger.info("[Go2] Initializing DDS (domain=0, default NIC)...")
             ChannelFactoryInitialize(0)
-
-            logger.info("[Go2] Connecting MotionSwitcherClient...")
             motion_switcher = MotionSwitcherClient()
             motion_switcher.SetTimeout(5.0)
             motion_switcher.Init()
             time.sleep(1.5)  # DDS discovery settle
 
-            # SportClient.Init runs AFTER sport mode is activated so that
-            # RPCs issued during Init land on a live peer.
             client = SportClient()
             client.SetTimeout(10.0)
 
@@ -211,10 +184,8 @@ class UnitreeGo2TwistAdapter:
                 self.disconnect()
                 return False
 
-            logger.info("[Go2] Initializing SportClient...")
             client.Init()
             time.sleep(2.0)
-
             logger.info("[Go2] Connected ✓")
 
             if not self._initialize_locomotion():
@@ -228,7 +199,6 @@ class UnitreeGo2TwistAdapter:
                         "[Go2] Rage Mode enable failed — continuing with regular locomotion"
                     )
 
-            self.print_status()
             return True
 
         except Exception as e:
@@ -250,10 +220,7 @@ class UnitreeGo2TwistAdapter:
         if session is None:
             return
 
-        # Stop the rage joystick publisher thread before tearing down
-        # SportClient / DDS resources — the thread reads session state.
         self._stop_rage_joystick(session)
-
         try:
             with session.lock:
                 session.client.StopMove()
@@ -261,12 +228,10 @@ class UnitreeGo2TwistAdapter:
             with session.lock:
                 session.client.StandDown()
             time.sleep(0.3)
-        # Best-effort teardown — never raise out of disconnect().
         except Exception as e:
             logger.error(f"[Go2] Error during disconnect: {e}")
 
         if session.state_sub is not None:
-            # Same: must not raise from teardown.
             try:
                 session.state_sub.Close()
             except Exception as e:
@@ -354,8 +319,6 @@ class UnitreeGo2TwistAdapter:
 
         vx, vy, wz = velocities
 
-        # When Rage is active, route through the wireless-controller
-        # joystick buffer — see _rage_joystick_loop.
         if session.rage_active:
             session.rage_cmd = (vx, vy, wz)
             return True
@@ -389,7 +352,6 @@ class UnitreeGo2TwistAdapter:
 
         if enable:
             if not session.locomotion_ready:
-                logger.info("[Go2] Locomotion not ready, initializing...")
                 if not self._initialize_locomotion():
                     logger.error("[Go2] Failed to initialize locomotion")
                     return False
@@ -435,23 +397,7 @@ class UnitreeGo2TwistAdapter:
             return session.latest_state
 
     def get_status(self) -> dict[str, Any]:
-        """One-shot snapshot of adapter + robot state.
-
-        Returns:
-            {
-              'connected': bool,
-              'mode': str | None,          — current MotionSwitcher mode
-              'enabled': bool,
-              'locomotion_ready': bool,
-              'rage_active': bool,         — FsmRageMode enabled on mcf side
-              'speed_level': int,
-              'has_state': bool,           — first SportModeState received?
-              'velocity': [vx, vy, wz] | None,
-              'position': [x, y, theta] | None,
-              'body_height': float | None,
-              'sport_mode_num': int | None, — SportModeState.mode integer
-            }
-        """
+        """One-shot snapshot of adapter + robot state"""
         with self._session_lock:
             session = self._session
 
@@ -470,7 +416,6 @@ class UnitreeGo2TwistAdapter:
                 "sport_mode_num": None,
             }
 
-        # check_mode already returns None on RPC failure — no try needed.
         mode = self.check_mode()
 
         # Snapshot state under session lock.
@@ -516,33 +461,6 @@ class UnitreeGo2TwistAdapter:
             "sport_mode_num": sport_mode_num,
         }
 
-    def print_status(self) -> None:
-        """Log a human-readable status summary. Safe whether connected or not."""
-        s = self.get_status()
-
-        if not s["connected"]:
-            logger.info(f"[Go2] status: DISCONNECTED  (speed_level={s['speed_level']})")
-            return
-
-        mode_str = s["mode"] if s["mode"] is not None else "?"
-
-        vel = s["velocity"]
-        pos = s["position"]
-        vel_str = f"[{vel[0]:+.2f},{vel[1]:+.2f},{vel[2]:+.2f}]" if vel is not None else "none"
-        pos_str = f"[{pos[0]:+.2f},{pos[1]:+.2f},{pos[2]:+.2f}]" if pos is not None else "none"
-        bh = f"{s['body_height']:.3f}m" if s["body_height"] is not None else "?"
-
-        logger.info(
-            f"[Go2] status: CONNECTED  "
-            f"mode='{mode_str}'  "
-            f"enabled={s['enabled']}  locomotion_ready={s['locomotion_ready']}  "
-            f"rage={s['rage_active']}  "
-            f"speed_level={s['speed_level']}  "
-            f"sport_mode_num={s['sport_mode_num']}  "
-            f"body_height={bh}  "
-            f"velocity={vel_str}  position={pos_str}"
-        )
-
     def set_speed_level(self, level: int) -> bool:
         """Set the SportClient speed envelope at runtime.
 
@@ -575,24 +493,10 @@ class UnitreeGo2TwistAdapter:
         Rage widens the forward envelope to ~2.5 m/s via a dedicated MNN
         policy (stiffer PD gains, up_vx=2.5, up_vy=1.0, up_vyaw=5.0).
 
-        The FSM transition itself is a simple api_id 2059 toggle. What's
-        non-obvious: Rage's velocity input does NOT arrive via
-        SportClient.Move() — AiController::Move's dispatch table omits
-        FsmRageMode (confirmed by binary RE). Instead, the policy reads
-        the wireless-controller joystick buffer on the DDS topic
+        Rage's velocity input does NOT arrive via SportClient.Move() — AiController::Move's dispatch table omits
+        FsmRageMode. Instead, the policy reads the wireless-controller joystick buffer on the DDS topic
         rt/wirelesscontroller_unprocessed, which sbus_handle (physical
         RC) and webrtc_bridge (mobile app) both write to.
-
-        So enabling Rage does three things:
-          1. BalanceStand()
-          2. _Call(2059, {"data": True}) — transition into FsmRageMode.
-          3. SwitchJoystick(True) + start a 100 Hz publisher thread on
-             rt/wirelesscontroller_unprocessed that republishes the
-             latest velocity command as a WirelessController_ message.
-             Needs to out-rate sbus_handle's idle zeros under last-
-             write-wins.
-
-        Disable reverses all three.
 
         Returns True if the 2059 toggle succeeded. The publisher thread
         is best-effort; publisher/SwitchJoystick failures are logged
@@ -646,10 +550,6 @@ class UnitreeGo2TwistAdapter:
             daemon=True,
         )
         session.rage_thread.start()
-        logger.info(
-            "[Go2] ✓ Rage joystick publisher running on "
-            f"rt/wirelesscontroller_unprocessed @ {self._RAGE_PUBLISH_HZ:.0f}Hz"
-        )
 
     def _stop_rage_joystick(self, session: _Session) -> None:
         """Stop the publisher thread and release the DDS writer."""
@@ -660,8 +560,6 @@ class UnitreeGo2TwistAdapter:
             session.rage_thread.join(timeout=1.0)
             session.rage_thread = None
         session.rage_stop = None
-        # ChannelPublisher has no Close() in SDK2 — drop the ref and let
-        # cyclonedds GC it. Match the pattern used in disconnect().
         session.rage_pub = None
 
     def _rage_joystick_loop(self, session: _Session) -> None:
@@ -675,7 +573,7 @@ class UnitreeGo2TwistAdapter:
         period = 1.0 / self._RAGE_PUBLISH_HZ
         msg = unitree_go_msg_dds__WirelessController_()
         msg.keys = 0
-        msg.ry = 0.0  # unused — Rage reads ly (fwd), lx (lateral), rx (yaw)
+        msg.ry = 0.0
 
         while session.rage_stop is not None and not session.rage_stop.wait(period):
             pub = session.rage_pub
@@ -749,11 +647,7 @@ class UnitreeGo2TwistAdapter:
             logger.info(f"[Go2] Sport mode '{current}' active")
             return True
 
-        logger.error(
-            f"[Go2] No sport mode active (CheckMode code={code}, data={data}). "
-            "Exit AI mode (L2+B on remote), close the Unitree app, and verify "
-            "this host can reach the Go2 on the network."
-        )
+        logger.error(f"[Go2] No sport mode active (CheckMode code={code}, data={data}).")
         return False
 
     def _initialize_locomotion(self) -> bool:
@@ -783,8 +677,6 @@ class UnitreeGo2TwistAdapter:
             return False
         time.sleep(2)
 
-        # SpeedLevel is best-effort — Move() still works if this returns
-        # non-zero. Rage Mode's envelope overrides SpeedLevel when active.
         with session.lock:
             sl_ret = session.client.SpeedLevel(self._speed_level)
         if sl_ret == 0:

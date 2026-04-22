@@ -87,18 +87,13 @@ GO2_NUM_MOTORS: int = 20  # LowCmd_.motor_cmd array length
 GO2_NUM_ACTIVE_JOINTS: int = 12  # Go2 uses 12 of the 20 slots
 
 # If no flush() happens within this window the watchdog fires
-# emergency_damp(). Tuned conservatively — loose enough for 100 Hz control
-# loops, tight enough that a dead publisher does not maintain torque.
 _WATCHDOG_TIMEOUT_S: float = 0.2
 
 # Damping gains used by emergency_damp() and watchdog. kd only — no kp,
-# so the robot relaxes to gravity rather than snapping to a target.
 _DAMP_KP: float = 0.0
 _DAMP_KD: float = 1.0
 
 # Foot-force sum (N) above which we treat the robot as still standing.
-# Damped / sat robot reads near zero on each foot; 50 N total is a loose
-# safety floor — better to refuse a borderline case than lurch.
 _FOOT_FORCE_DAMPED_THRESHOLD_N: float = 50.0
 
 # PMSM motor enable byte (Unitree convention: 0x01 = enabled, 0x00 = disabled).
@@ -118,10 +113,6 @@ class UnitreeGo2LowLevelAdapter:
     NOT thread-safe for concurrent writes from multiple threads. Expected
     usage: one control thread calling write_joint_* at a steady rate,
     plus the internal watchdog thread.
-
-    TODO(network_interface): single-NIC assumption for now. Re-add an
-    explicit iface arg if discovery picks the wrong card on a multi-NIC
-    host — mirror whatever shape UnitreeGo2TwistAdapter ends up using.
     """
 
     def __init__(self, assume_dds_initialized: bool = False) -> None:
@@ -137,11 +128,6 @@ class UnitreeGo2LowLevelAdapter:
         self._subscriber: ChannelSubscriber | None = None
         self._motion_switcher: MotionSwitcherClient | None = None
         self._crc_helper: CRC | None = None
-
-        # Updated by flush() only. Watchdog uses this to decide if the
-        # user is still driving. emergency_damp() intentionally does NOT
-        # update it, so the watchdog keeps firing as long as the user
-        # stays silent.
         self._last_user_flush_ts: float = 0.0
 
         self._watchdog_stop = threading.Event()
@@ -173,15 +159,11 @@ class UnitreeGo2LowLevelAdapter:
         """
         try:
             if not self._assume_dds_initialized:
-                logger.info("[Go2 LowLevel] Initializing DDS (domain=0)...")
                 ChannelFactoryInitialize(0)
 
-            # Subscriber first so preconditions have state to work with.
-            logger.info("[Go2 LowLevel] Subscribing rt/lowstate...")
             self._subscriber = ChannelSubscriber("rt/lowstate", LowState_)
             self._subscriber.Init(self._on_lowstate, 10)
 
-            # Wait for first LowState_ message (up to 3s).
             got_state = False
             deadline = time.monotonic() + 3.0
             while time.monotonic() < deadline:
@@ -198,7 +180,6 @@ class UnitreeGo2LowLevelAdapter:
                 return False
 
             # MotionSwitcher precondition.
-            logger.info("[Go2 LowLevel] Connecting MotionSwitcherClient...")
             self._motion_switcher = MotionSwitcherClient()
             self._motion_switcher.SetTimeout(5.0)
             self._motion_switcher.Init()
@@ -214,15 +195,11 @@ class UnitreeGo2LowLevelAdapter:
                 return False
 
             # Publisher on rt/lowcmd.
-            logger.info("[Go2 LowLevel] Publishing on rt/lowcmd...")
             self._publisher = ChannelPublisher("rt/lowcmd", LowCmd_)
             self._publisher.Init()
 
-            # Default LowCmd_ with all motors disabled.
             self._cmd = self._build_lowcmd_defaults()
 
-            # Mark connected BEFORE starting watchdog so the watchdog loop
-            # sees _connected == True on its first iteration.
             self._connected = True
             self._last_user_flush_ts = time.monotonic()
 
@@ -234,7 +211,7 @@ class UnitreeGo2LowLevelAdapter:
             )
             self._watchdog_thread.start()
 
-            logger.info("[Go2 LowLevel] ✓ Connected")
+            logger.info("[Go2 LowLevel] Connected")
             return True
 
         except Exception as e:
