@@ -271,7 +271,11 @@ class RerunBridgeModule(Module[Config]):
         # Strip everything after # (LCM topic suffix)
         topic_str = topic_str.split("#")[0]
         # Ensure / separator between prefix and topic
-        assert topic_str.startswith("/"), f"{topic_str} doesn't start with slash"
+        if not topic_str.startswith("/"):
+            raise ValueError(
+                f"{topic_str!r} doesn't start with slash; SHM topic names must begin with '/'"
+            )
+
         return f"{self.config.entity_prefix}{topic_str}"
 
     def _on_message(self, msg: Any, topic: Any) -> None:
