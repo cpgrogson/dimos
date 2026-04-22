@@ -13,6 +13,8 @@
 # limitations under the License.
 import pytest
 
+pytestmark = pytest.mark.slow
+
 
 def test_person_ros_confidence() -> None:
     """Test that Detection2DPerson preserves confidence when converting to ROS format."""

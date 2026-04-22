@@ -26,6 +26,8 @@ from dimos.utils.testing.moment import OutputMoment
 from dimos.utils.testing.replay import TimedSensorReplay
 from dimos.utils.testing.test_moment import Go2Moment
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture
 def grid() -> Generator[VoxelGrid, None, None]:

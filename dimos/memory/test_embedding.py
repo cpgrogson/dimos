@@ -19,6 +19,8 @@ from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.utils.data import get_data
 from dimos.utils.testing.replay import TimedSensorReplay
 
+pytestmark = pytest.mark.slow
+
 dir_name = "unitree_go2_bigoffice"
 
 

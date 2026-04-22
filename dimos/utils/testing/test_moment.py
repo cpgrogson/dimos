@@ -13,6 +13,8 @@
 # limitations under the License.
 import time
 
+import pytest
+
 from dimos.core.transport import LCMTransport
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Transform import Transform
@@ -23,6 +25,8 @@ from dimos.protocol.tf.tf import TF
 from dimos.robot.unitree.go2 import connection
 from dimos.utils.data import get_data
 from dimos.utils.testing.moment import Moment, SensorMoment
+
+pytestmark = pytest.mark.slow
 
 data_dir = get_data("unitree_go2_office_walk2")
 
