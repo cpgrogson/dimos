@@ -275,11 +275,6 @@ class BufferConfiguratorMacOS(SystemConfigurator):
                 else:
                     saved[key] = target
                     break
-            else:
-                # Halving exhausted without success — accept current OS value
-                # so we don't re-prompt on every run.
-                saved[key] = current
-        # Write achieved/current amounts to config to avoid requesting TARGET every startup.
         _save_sysctl_conf(saved)
 
 
