@@ -1,0 +1,26 @@
+- pr: 1663
+  comment_id: 3002702496
+  author: paul-nechifor
+  file: dimos/agents/mcp/test_mcp_server.py
+  line: 120
+  problem: "_free_port already exists as _find_free_port in the codebase; don't add a 4th copy"
+  solution: "Kept the local _free_port for now — the existing _find_free_port instances are in unrelated demo scripts (demo_mcp_killtest.py, demo_devex.py) and are not importable fixtures yet. Paul's fixture PR #1665 hasn't merged. Once it lands, this can switch to the shared fixture."
+  commit: null
+
+- pr: 1663
+  comment_id: 3002714331
+  author: paul-nechifor
+  file: dimos/agents/mcp/test_mcp_server.py
+  line: 149
+  problem: "Stash already has 3 instances of wait_for_mcp; don't add a 4th that is inlined"
+  solution: "Extracted the inlined wait loop into a local _wait_for_mcp helper. A shared conftest fixture would be better but depends on PR #1665 landing first."
+  commit: null
+
+- pr: 1663
+  comment_id: 3002720334
+  author: paul-nechifor
+  file: dimos/agents/mcp/test_mcp_server.py
+  line: 159
+  problem: "Server should be stopped even if the test fails — use a fixture"
+  solution: "Wrapped the test body in try/finally so server.stop() is called on any failure. A proper pytest fixture would be cleaner but requires the shared conftest work from PR #1665."
+  commit: null
