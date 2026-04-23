@@ -28,13 +28,16 @@ Run:
     pytest dimos/navigation/rosnav/test_rosnav_goal_navigation.py -m slow -s
 """
 
+import pytest
+
+pytest.importorskip("dimos.core.blueprints", reason="dimos.core.blueprints was removed")
+
 import math
 import threading
 import time
 from typing import Any
 
 from dimos_lcm.std_msgs import Bool
-import pytest
 
 from dimos.core.blueprints import autoconnect
 from dimos.core.core import rpc

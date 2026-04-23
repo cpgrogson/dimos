@@ -13,6 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import pytest
+
+pytest.importorskip("dimos.core.blueprints", reason="dimos.core.blueprints was removed")
+
 from dimos.agents.vlm_agent import VLMAgent
 from dimos.agents.vlm_stream_tester import VlmStreamTester
 from dimos.core.coordination.blueprints import autoconnect

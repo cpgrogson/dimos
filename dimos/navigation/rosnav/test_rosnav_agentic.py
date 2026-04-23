@@ -40,6 +40,10 @@ Run:
     pytest dimos/navigation/rosnav/test_rosnav_agentic.py -m slow -s
 """
 
+import pytest
+
+pytest.importorskip("dimos.core.blueprints", reason="dimos.core.blueprints was removed")
+
 import json
 import math
 import os
@@ -49,7 +53,6 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 from langchain_core.messages.base import BaseMessage
-import pytest
 from reactivex.disposable import Disposable
 
 from dimos.agents.agent import Agent

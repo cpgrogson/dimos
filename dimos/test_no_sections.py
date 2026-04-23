@@ -53,6 +53,8 @@ IGNORED_DIRS = {
     # third-party vendored code
     "gtsam",
     "ros-navigation-autonomy-stack",
+    # local enhancement scratch files
+    ".ignore.enhance",
 }
 
 # Lines that match section patterns but are actually programmatic / intentional.
