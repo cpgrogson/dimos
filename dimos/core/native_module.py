@@ -134,6 +134,10 @@ class NativeModule(Module):
         self._resolve_paths()
 
     @rpc
+    def stop(self) -> None:
+        super().stop()
+
+    @rpc
     def start(self) -> None:
         super().start()
         self._maybe_build()
