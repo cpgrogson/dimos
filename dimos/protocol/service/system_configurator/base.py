@@ -15,31 +15,21 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from functools import cache
 import logging
 import os
 import subprocess
-from typing import Any
 
+from dimos.utils import prompt
 from dimos.utils.prompt import confirm, sudo_prompt
 
 logger = logging.getLogger(__name__)
 
-# sudo helpers
 
-
-@cache
 def _is_root_user() -> bool:
     try:
         return os.geteuid() == 0
     except AttributeError:
         return False
-
-
-def sudo_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
-    if _is_root_user():
-        return subprocess.run(list(args), **kwargs)
-    return subprocess.run(["sudo", *args], **kwargs)
 
 
 def _read_sysctl_int(name: str) -> int | None:
@@ -63,7 +53,7 @@ def _read_sysctl_int(name: str) -> int | None:
 
 
 def _write_sysctl_int(name: str, value: int) -> None:
-    sudo_run("sysctl", "-w", f"{name}={value}", check=True, text=True, capture_output=False)
+    prompt.sudo_run("sysctl", "-w", f"{name}={value}", check=True, text=True, capture_output=True)
 
 
 # base class for system config checks/requirements

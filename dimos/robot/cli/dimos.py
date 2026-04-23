@@ -14,20 +14,28 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from contextlib import suppress
 from datetime import datetime, timezone
 import inspect
 import json
 import os
+from pathlib import Path
 import sys
 import time
-from typing import Any, get_args, get_origin
+import types
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 import click
 from dotenv import load_dotenv
+from pydantic import BaseModel
+from pydantic_core import PydanticUndefined
 import requests
 import typer
 
 from dimos.agents.mcp.mcp_adapter import McpAdapter, McpError
+from dimos.constants import CONFIG_DIR
+from dimos.core.daemon import install_signal_handlers
 from dimos.core.global_config import GlobalConfig, global_config
 from dimos.core.instance_registry import (
     InstanceInfo,
@@ -41,6 +49,9 @@ from dimos.core.instance_registry import (
     unregister,
 )
 from dimos.utils.logging_config import setup_logger
+
+if TYPE_CHECKING:
+    from dimos.core.coordination.blueprints import Blueprint, BlueprintAtom
 
 logger = setup_logger()
 
@@ -133,6 +144,75 @@ def _resolve_name(name: str | None) -> InstanceInfo:
     return info
 
 
+def arg_help(
+    config: type[BaseModel],
+    blueprint: Blueprint,
+    indent: str = "    ",
+    module: str = "",
+    _atom: BlueprintAtom | None = None,
+) -> str:
+    output = ""
+    for k, info in config.model_fields.items():
+        if k == "g":
+            continue
+        t = info.annotation
+        if isinstance(t, types.GenericAlias):
+            # Can't be specified on CLI
+            continue
+
+        # TODO(PY314): if isinstance(t, Union):
+        if get_origin(t) in {Union, types.UnionType}:
+            with suppress(StopIteration):
+                t = next(u for u in get_args(t) if issubclass(u, BaseModel))
+
+        if inspect.isclass(t) and issubclass(t, BaseModel):
+            output += f"{indent}{module}{k}:\n"
+            # Find blueprint atom
+            bp = next(bp for bp in blueprint.blueprints if bp.module.name == k)
+            output += arg_help(
+                t, blueprint, indent=indent + "  ", module=module + k + ".", _atom=bp
+            )
+        else:
+            assert _atom is not None
+            # Use __name__ to avoid "<class 'int'>" style output on basic types.
+            display_type = t.__name__ if isinstance(t, type) else t
+            required = "[Required] " if info.is_required() and k not in _atom.kwargs else ""
+            d = _atom.kwargs.get(k, info.default)
+            default = f" (default: {d})" if d is not PydanticUndefined else ""
+            output += f"{indent}* {required}{module}{k}: {display_type}{default}\n"
+    return output
+
+
+def load_config_args(config: type[BaseModel], args: Iterable[str], path: Path) -> dict[str, Any]:
+    try:
+        kwargs = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        kwargs = {}
+
+    for k, v in os.environ.items():
+        parts = k.lower().split("__")
+        if parts[0] not in config.model_fields:
+            continue
+        d = kwargs
+        for p in parts[:-1]:
+            d = d.setdefault(p, {})
+        d[parts[-1]] = v
+
+    for arg in args:
+        k, _, v = arg.partition("=")
+        parts = k.split(".")
+        d = kwargs
+        for p in parts[:-1]:
+            d = d.setdefault(p, {})
+        d[parts[-1]] = v
+
+    # We don't need this config, but this atleast validates the user input first.
+    # This will help catch misspellings and similar mistakes.
+    config(**kwargs)
+
+    return kwargs  # type: ignore[no-any-return]
+
+
 @main.command()
 def run(
     ctx: typer.Context,
@@ -148,9 +228,19 @@ def run(
         False, "--force-replace", help="Auto-stop existing instance with same name"
     ),
     disable: list[str] = typer.Option([], "--disable", help="Module names to disable"),
+    blueprint_args: list[str] = typer.Option((), "--option", "-o"),
+    config_path: Path = typer.Option(
+        CONFIG_DIR / "dimos", "--config", "-c", help="Path to config file"
+    ),
+    show_help: bool = typer.Option(False, "--help"),
 ) -> None:
     """Start a robot blueprint."""
     logger.info("Starting DimOS")
+
+    from dimos.core.coordination.blueprints import autoconnect
+    from dimos.utils.logging_config import set_run_log_dir, setup_exception_handler
+
+    setup_exception_handler()
 
     cli_config_overrides: dict[str, Any] = ctx.obj
 
@@ -179,15 +269,24 @@ def run(
         raise typer.Exit(0)
     else:
         # Foreground path
-        from dimos.core.blueprints import autoconnect
+        from dimos.core.coordination.blueprints import autoconnect
         from dimos.robot.get_all_blueprints import get_by_name, get_module_by_name
-        from dimos.utils.logging_config import set_run_log_dir, setup_exception_handler
 
-        setup_exception_handler()
         global_config.update(**cli_config_overrides)
 
         blueprint_name = "-".join(robot_types)
         instance_name = name or blueprint_name
+
+        blueprint = autoconnect(*map(get_by_name, robot_types))
+
+        if disable:
+            disabled_classes = tuple(get_module_by_name(d).blueprints[0].module for d in disable)
+            blueprint = blueprint.disabled_modules(*disabled_classes)
+
+        if show_help:
+            print("Blueprint arguments:")
+            print(arg_help(blueprint.config(), blueprint))
+            return
 
         # Check for existing instance
         existing = get(instance_name)
@@ -229,12 +328,6 @@ def run(
         config_snapshot = run_dir / "config.json"
         config_snapshot.write_text(json.dumps(global_config.model_dump(mode="json"), indent=2))
 
-        blueprint = autoconnect(*map(get_by_name, robot_types))
-
-        if disable:
-            disabled_classes = tuple(get_module_by_name(d).blueprints[0].module for d in disable)
-            blueprint = blueprint.disabled_modules(*disabled_classes)
-
         coordinator = blueprint.build(cli_config_overrides=cli_config_overrides)
 
         info = InstanceInfo(
@@ -248,6 +341,7 @@ def run(
             config_overrides=cli_config_overrides,
         )
         register(info)
+        install_signal_handlers(info, coordinator, sigint=False)
         try:
             coordinator.loop()
         finally:

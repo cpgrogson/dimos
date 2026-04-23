@@ -15,13 +15,14 @@
 import asyncio
 import os
 import time
+from typing import Any
 
 import pytest
 from reactivex import operators as ops
 
+from dimos.core.coordination.module_coordinator import ModuleCoordinator
 from dimos.core.core import rpc
 from dimos.core.module import Module, ModuleConfig
-from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import Out
 from dimos.core.transport import LCMTransport
 from dimos.msgs.geometry_msgs.Transform import Transform
@@ -39,10 +40,11 @@ class VideoReplayConfig(ModuleConfig):
     video_path: str
 
 
-class VideoReplayModule(Module[VideoReplayConfig]):
+class VideoReplayModule(Module):
     """Module that replays video data from TimedSensorReplay."""
 
-    default_config = VideoReplayConfig
+    config: VideoReplayConfig
+
     video_out: Out[Image]
     _subscription = None
 
@@ -76,7 +78,7 @@ class VideoReplayModule(Module[VideoReplayConfig]):
 class OdometryReplayModule(Module):
     """Module that replays odometry data and publishes to the tf system."""
 
-    def __init__(self, odom_path: str) -> None:
+    def __init__(self, odom_path: str, **kwargs: Any) -> None:
         super().__init__()
         self.odom_path = odom_path
         self._subscription = None
@@ -134,11 +136,11 @@ async def test_spatial_memory_module_with_replay(dimos, tmp_path):
 
     # Deploy modules
     # Video replay module
-    video_module = dimos.deploy(VideoReplayModule, video_path)
+    video_module = dimos.deploy(VideoReplayModule, video_path=video_path)
     video_module.video_out.transport = LCMTransport("/test_video", Image)
 
     # Odometry replay module (publishes to tf system directly)
-    odom_module = dimos.deploy(OdometryReplayModule, odom_path)
+    odom_module = dimos.deploy(OdometryReplayModule, odom_path=odom_path)
 
     # Spatial memory module
     spatial_memory = dimos.deploy(

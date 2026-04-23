@@ -27,7 +27,7 @@ from typing import Any
 import structlog
 from structlog.processors import CallsiteParameter, CallsiteParameterAdder
 
-from dimos.constants import DIMOS_LOG_DIR, DIMOS_PROJECT_ROOT
+from dimos.constants import DIMOS_PROJECT_ROOT, LOG_DIR
 
 # Suppress noisy loggers
 logging.getLogger("aiortc.codecs.h264").setLevel(logging.ERROR)
@@ -42,7 +42,7 @@ _RUN_LOG_DIR: Path | None = None
 
 
 def set_run_log_dir(log_dir: str | Path) -> None:
-    """Set per-run log directory. Call BEFORE blueprint.build().
+    """Set per-run log directory. Call BEFORE build(blueprint).
 
     Updates the global path AND migrates any existing FileHandlers on
     stdlib loggers so that logs written after this call go to the new
@@ -79,15 +79,7 @@ def get_run_log_dir() -> Path | None:
 
 
 def _get_log_directory() -> Path:
-    # Use DIMOS_HOME (~/.dimos) for installed packages, project logs/ for dev
-    if (DIMOS_PROJECT_ROOT / ".git").exists():
-        log_dir = DIMOS_LOG_DIR
-    else:
-        dimos_home = os.environ.get("DIMOS_HOME")
-        if dimos_home:
-            log_dir = Path(dimos_home) / "logs"
-        else:
-            log_dir = Path.home() / ".dimos" / "logs"
+    log_dir = LOG_DIR
 
     try:
         log_dir.mkdir(parents=True, exist_ok=True)

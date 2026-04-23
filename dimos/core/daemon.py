@@ -56,8 +56,8 @@ from typing import TYPE_CHECKING
 from dimos.utils.logging_config import setup_logger
 
 if TYPE_CHECKING:
+    from dimos.core.coordination.module_coordinator import ModuleCoordinator
     from dimos.core.instance_registry import InstanceInfo
-    from dimos.core.module_coordinator import ModuleCoordinator
     from dimos.core.output_tee import OutputTee
 
 logger = setup_logger()
@@ -374,8 +374,15 @@ def install_signal_handlers(
     info: InstanceInfo,
     coordinator: ModuleCoordinator,
     tee: OutputTee | None = None,
+    *,
+    sigint: bool = True,
 ) -> None:
-    """Install SIGTERM/SIGINT handlers that stop the coordinator and clean the registry."""
+    """Install SIGTERM/SIGINT handlers that stop the coordinator and clean the registry.
+
+    When ``sigint`` is False, only SIGTERM is wired. This is useful for foreground
+    mode where the default SIGINT behavior (``KeyboardInterrupt``) should be
+    preserved so Ctrl+C produces a visible traceback.
+    """
     from dimos.core import instance_registry
 
     def _shutdown(signum: int, frame: object) -> None:
@@ -392,7 +399,8 @@ def install_signal_handlers(
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+    if sigint:
+        signal.signal(signal.SIGINT, _shutdown)
 
 
 if __name__ == "__main__":

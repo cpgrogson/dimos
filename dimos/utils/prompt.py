@@ -1,4 +1,4 @@
-# Copyright 2026 Dimensional Inc.
+# Copyright 2025-2026 Dimensional Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,11 +27,15 @@ Usage::
 
 When running inside ``dio`` (the DimOS TUI), prompts are rendered as
 modal popups.  Otherwise styled terminal prompts are shown via *rich*.
+
+Prompts are safe to call in modules (despite potentially no stdin, or
+potentially a TUI that eats/controls the stdin).
 """
 
 from __future__ import annotations
 
 import getpass
+import os
 import subprocess
 import sys
 import threading
@@ -83,6 +87,7 @@ def confirm(
         The question to display.
     default:
         The value returned when the user presses Enter without typing.
+        In non-interactive mode (no tty), returns *default* without prompting.
     question_id:
         Optional stable identifier. If provided, the answer is cached
         in memory and subsequent calls with the same id return the
@@ -163,6 +168,17 @@ def sudo_prompt(message: str = "sudo password required") -> bool:
         return False
 
     return _terminal_sudo(message)
+
+
+def sudo_run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+    """Run a command, prepending sudo if not already root."""
+    try:
+        is_root = os.geteuid() == 0
+    except AttributeError:
+        is_root = False
+    if is_root:
+        return subprocess.run(list(args), **kwargs)
+    return subprocess.run(["sudo", *args], **kwargs)
 
 
 def _terminal_confirm(message: str, default: bool) -> bool:

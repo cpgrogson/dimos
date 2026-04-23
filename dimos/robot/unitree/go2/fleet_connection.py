@@ -34,7 +34,7 @@ from dimos.utils.logging_config import setup_logger
 if sys.version_info >= (3, 11):
     from typing import Self
 else:
-    from typing import Any as Self
+    from typing_extensions import Self
 
 if TYPE_CHECKING:
     from dimos.msgs.geometry_msgs.Twist import Twist
@@ -54,13 +54,13 @@ class FleetConnectionConfig(ConnectionConfig):
         return self
 
 
-class Go2FleetConnection(GO2Connection[FleetConnectionConfig]):
+class Go2FleetConnection(GO2Connection):
     """Inherits all single-robot behaviour from GO2Connection for the primary
     (first) robot. Additional robots only receive broadcast commands
     (move, standup, liedown, publish_request).
     """
 
-    default_config = FleetConnectionConfig
+    config: FleetConnectionConfig
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -142,9 +142,3 @@ class Go2FleetConnection(GO2Connection[FleetConnectionConfig]):
             except Exception as e:
                 logger.error(f"Fleet publish_request failed: {e}")
         return self.connection.publish_request(topic, data)
-
-
-go2_fleet_connection = Go2FleetConnection.blueprint
-
-
-__all__ = ["Go2FleetConnection", "go2_fleet_connection"]

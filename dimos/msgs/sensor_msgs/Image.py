@@ -27,7 +27,6 @@ import numpy as np
 import reactivex as rx
 from reactivex import operators as ops
 import rerun as rr
-from turbojpeg import TurboJPEG  # type: ignore[import-untyped]
 
 from dimos.types.timestamped import Timestamped, TimestampedBufferCollection, to_human_readable
 from dimos.utils.reactive import quality_barrier
@@ -50,7 +49,7 @@ class ImageFormat(Enum):
     DEPTH16 = "DEPTH16"
 
 
-def _format_to_rerun(data: np.ndarray, fmt: ImageFormat) -> Any:  # type: ignore[type-arg]
+def _format_to_rerun(data: np.ndarray, fmt: ImageFormat) -> Any:
     """Convert image data to Rerun archetype based on format."""
     match fmt:
         case ImageFormat.RGB:
@@ -162,7 +161,7 @@ class Image(Timestamped):
     @classmethod
     def from_numpy(
         cls,
-        np_image: np.ndarray,  # type: ignore[type-arg]
+        np_image: np.ndarray,
         format: ImageFormat = ImageFormat.BGR,
         frame_id: str = "",
         ts: float | None = None,
@@ -196,7 +195,7 @@ class Image(Timestamped):
     @classmethod
     def from_opencv(
         cls,
-        cv_image: np.ndarray,  # type: ignore[type-arg]
+        cv_image: np.ndarray,
         format: ImageFormat = ImageFormat.BGR,
         frame_id: str = "",
         ts: float | None = None,
@@ -209,7 +208,7 @@ class Image(Timestamped):
             ts=ts if ts is not None else time.time(),
         )
 
-    def to_opencv(self) -> np.ndarray:  # type: ignore[type-arg]
+    def to_opencv(self) -> np.ndarray:
         """Convert to OpenCV BGR format."""
         arr = self.data
         if self.format == ImageFormat.BGR:
@@ -229,7 +228,7 @@ class Image(Timestamped):
             return arr
         raise ValueError(f"Unsupported format: {self.format}")
 
-    def as_numpy(self) -> np.ndarray:  # type: ignore[type-arg]
+    def as_numpy(self) -> np.ndarray:
         """Get image data as numpy array."""
         return self.data
 
@@ -377,15 +376,21 @@ class Image(Timestamped):
 
     @property
     def sharpness(self) -> float:
-        """Return sharpness score."""
-        gray = self.to_grayscale()
-        sx = cv2.Sobel(gray.data, cv2.CV_32F, 1, 0, ksize=5)
-        sy = cv2.Sobel(gray.data, cv2.CV_32F, 0, 1, ksize=5)
-        magnitude = cv2.magnitude(sx, sy)
-        mean_mag = float(magnitude.mean())
-        if mean_mag <= 0:
+        """Return sharpness score.
+
+        Downsamples to ~160px wide before computing Laplacian variance
+        for fast evaluation (~10-20x cheaper than full-res Sobel).
+        """
+        gray = self.to_grayscale().data
+        # Downsample to ~160px wide for cheap evaluation
+        h, w = gray.shape[:2]
+        if w > 160:
+            scale = 160.0 / w
+            gray = cv2.resize(gray, (160, int(h * scale)), interpolation=cv2.INTER_AREA)
+        lap_var = cv2.Laplacian(gray, cv2.CV_32F).var()
+        if lap_var <= 0:
             return 0.0
-        return float(np.clip((np.log10(mean_mag + 1) - 1.7) / 2.0, 0.0, 1.0))
+        return float(np.clip((np.log10(lap_var + 1) - 1.0) / 3.0, 0.0, 1.0))
 
     def save(self, filepath: str) -> bool:
         arr = self.to_opencv()
@@ -466,7 +471,7 @@ class Image(Timestamped):
         channels = 1 if self.data.ndim == 2 else self.data.shape[2]
         msg.step = self.width * self.dtype.itemsize * channels
 
-        view = memoryview(np.ascontiguousarray(self.data)).cast("B")  # type: ignore[arg-type]
+        view = memoryview(np.ascontiguousarray(self.data)).cast("B")
         msg.data_length = len(view)
         msg.data = view
 
@@ -504,6 +509,8 @@ class Image(Timestamped):
         Returns:
             LCM-encoded bytes with JPEG-compressed image data
         """
+        from turbojpeg import TurboJPEG
+
         jpeg = TurboJPEG()
         msg = LCMImage()
 
@@ -549,6 +556,8 @@ class Image(Timestamped):
         Returns:
             Image instance
         """
+        from turbojpeg import TurboJPEG
+
         jpeg = TurboJPEG()
         msg = LCMImage.lcm_decode(data)
 
@@ -608,10 +617,10 @@ def sharpness_barrier(target_frequency: float) -> Callable[[Observable[Image]], 
     """Select the sharpest Image within each time window."""
     if target_frequency <= 0:
         raise ValueError("target_frequency must be positive")
-    return quality_barrier(lambda image: image.sharpness, target_frequency)  # type: ignore[attr-defined]
+    return quality_barrier(lambda image: image.sharpness, target_frequency)
 
 
-def _get_lcm_encoding(fmt: ImageFormat, dtype: np.dtype) -> str:  # type: ignore[type-arg]
+def _get_lcm_encoding(fmt: ImageFormat, dtype: np.dtype) -> str:
     if fmt == ImageFormat.GRAY:
         if dtype == np.uint8:
             return "mono8"

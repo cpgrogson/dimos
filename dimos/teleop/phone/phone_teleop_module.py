@@ -56,7 +56,7 @@ class PhoneTeleopConfig(ModuleConfig):
     server_port: int = 8444
 
 
-class PhoneTeleopModule(Module[PhoneTeleopConfig]):
+class PhoneTeleopModule(Module):
     """
     Receives raw sensor data from the phone web app via an embedded WebSocket server:
       - TwistStamped: linear=(roll, pitch, yaw) deg, angular=(gyro) deg/s
@@ -66,7 +66,7 @@ class PhoneTeleopModule(Module[PhoneTeleopConfig]):
         - twist_output: TwistStamped (velocity command for robot)
     """
 
-    default_config = PhoneTeleopConfig
+    config: PhoneTeleopConfig
 
     # Output: velocity command to robot
     twist_output: Out[TwistStamped]
@@ -280,12 +280,3 @@ class PhoneTeleopModule(Module[PhoneTeleopConfig]):
         Override to customize output (e.g., apply limits, remap axes).
         """
         self.twist_output.publish(output_msg)
-
-
-phone_teleop_module = PhoneTeleopModule.blueprint
-
-__all__ = [
-    "PhoneTeleopConfig",
-    "PhoneTeleopModule",
-    "phone_teleop_module",
-]

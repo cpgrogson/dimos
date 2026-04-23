@@ -20,7 +20,7 @@ import json
 import os
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, create_autospec, patch
 
 from dotenv import load_dotenv
@@ -28,9 +28,9 @@ import numpy as np
 import pytest
 from reactivex import operators as ops
 
+from dimos.core.coordination.module_coordinator import ModuleCoordinator
 from dimos.core.core import rpc
 from dimos.core.module import Module
-from dimos.core.module_coordinator import ModuleCoordinator
 from dimos.core.stream import Out
 from dimos.core.transport import LCMTransport
 from dimos.models.vl.base import VlModel
@@ -42,7 +42,6 @@ from dimos.perception.experimental.temporal_memory.frame_window_accumulator impo
 )
 from dimos.perception.experimental.temporal_memory.temporal_memory import (
     TemporalMemory,
-    TemporalMemoryConfig,
 )
 from dimos.perception.experimental.temporal_memory.temporal_state import TemporalState
 from dimos.perception.experimental.temporal_memory.temporal_utils.graph_utils import (
@@ -522,15 +521,15 @@ class VideoReplayModule(Module):
 
     video_out: Out[Image]
 
-    def __init__(self, num_frames: int = 5) -> None:
-        super().__init__()
+    def __init__(self, num_frames: int = 5, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
         self.num_frames = num_frames
 
     @rpc
     def start(self) -> None:
         import reactivex
 
-        def emit_frames(observer, scheduler):  # type: ignore[no-untyped-def]
+        def emit_frames(observer, scheduler):
             for i in range(self.num_frames):
                 img = _make_image(value=min(50 + i * 30, 255))  # Varying brightness
                 img.ts = time.time()
@@ -538,7 +537,7 @@ class VideoReplayModule(Module):
                 time.sleep(0.5)
             observer.on_completed()
 
-        self._disposables.add(
+        self.register_disposable(
             reactivex.create(emit_frames)
             .pipe(
                 ops.observe_on(reactivex.scheduler.NewThreadScheduler()),
@@ -596,14 +595,12 @@ class TestTemporalMemoryIntegration:
             tm = dimos_cluster.deploy(
                 TemporalMemory,
                 vlm=vlm,
-                config=TemporalMemoryConfig(
-                    fps=1.0,
-                    window_s=2.0,
-                    stride_s=2.0,
-                    summary_interval_s=10.0,
-                    max_frames_per_window=3,
-                    db_dir=str(db_dir),
-                ),
+                fps=1.0,
+                window_s=2.0,
+                stride_s=2.0,
+                summary_interval_s=10.0,
+                max_frames_per_window=3,
+                db_dir=str(db_dir),
             )
         yield tm
         try:
