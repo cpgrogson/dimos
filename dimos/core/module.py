@@ -121,6 +121,11 @@ class ModuleBase(Configurable, CompositeResource):
         except ValueError:
             ...
 
+    @property
+    def _module_closed(self) -> bool:
+        """Backward-compatible alias: True when mod_state is 'stopped'."""
+        return self.mod_state.get() == "stopped"
+
     @classproperty
     def name(self) -> str:
         """Name for this module to be used for blueprint configs."""
