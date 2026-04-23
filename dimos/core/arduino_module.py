@@ -206,7 +206,7 @@ class ArduinoModuleConfig(NativeModuleConfig):
     auto_flash: bool = True
     flash_timeout: float = 60.0
 
-    # --- Compile-time tuning (passed as -D flags to arduino-cli) ---
+    # Compile-time tuning (passed as -D flags to arduino-cli)
     # These override the defaults in dimos_lcm_pubsub.h / dsp_protocol.h.
     # Set to None (the default) to keep the header's built-in default.
     max_subs: int | None = None  # DIMOS_LCM_MAX_SUBS (AVR default: 4)
