@@ -151,6 +151,7 @@ def test_mcp_server_lifecycle() -> None:
     port = _free_port()
 
     server = McpServer()
+    server._async_thread.start()  # initialize event loop before _start_server
     server._start_server(port=port)
     try:
         url = f"http://127.0.0.1:{port}/mcp"
