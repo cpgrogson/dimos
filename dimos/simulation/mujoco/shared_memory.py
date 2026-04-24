@@ -41,6 +41,12 @@ _lidar_size = 1024 * 1024 * 4  # 4MB should be enough for point cloud
 _seq_size = 8 * 8  # 8 int64 values for different data types
 # Control buffer: ready flag + stop flag
 _control_size = 2 * 4  # 2 int32 values
+# Low-level passthrough: per-joint command (q, kp, kd) for up to 32 motors.
+_LOWLEVEL_MAX_MOTORS = 32
+_joint_cmd_size = _LOWLEVEL_MAX_MOTORS * 3 * 4  # float32 (q, kp, kd)
+_joint_state_size = _LOWLEVEL_MAX_MOTORS * 3 * 4  # float32 (q, dq, tau)
+# IMU: quat (w,x,y,z) + gyro(3) + accel(3) float32
+_imu_size = 10 * 4
 
 _shm_sizes = {
     "video": _video_size,
@@ -53,6 +59,9 @@ _shm_sizes = {
     "lidar_len": 4,
     "seq": _seq_size,
     "control": _control_size,
+    "joint_cmd": _joint_cmd_size,
+    "joint_state": _joint_state_size,
+    "imu": _imu_size,
 }
 
 
@@ -76,6 +85,9 @@ class ShmSet:
     lidar_len: SharedMemory
     seq: SharedMemory
     control: SharedMemory
+    joint_cmd: SharedMemory
+    joint_state: SharedMemory
+    imu: SharedMemory
 
     @classmethod
     def from_names(cls, shm_names: dict[str, str]) -> "ShmSet":
@@ -173,6 +185,42 @@ class ShmReader:
             return linear, angular
         return None
 
+    # --- Low-level passthrough (child/subprocess side) ---
+
+    def read_joint_cmd(self, num_motors: int) -> NDArray[Any] | None:
+        """Return (num_motors, 3) array of (q, kp, kd), or ``None`` if no new cmd."""
+        seq = self._get_seq(7)
+        if seq > 0:
+            arr: NDArray[Any] = np.ndarray(
+                (_LOWLEVEL_MAX_MOTORS, 3), dtype=np.float32, buffer=self.shm.joint_cmd.buf
+            )
+            return arr[:num_motors].copy()
+        return None
+
+    def write_joint_state(self, q: NDArray[Any], dq: NDArray[Any], tau: NDArray[Any]) -> None:
+        n = len(q)
+        if n > _LOWLEVEL_MAX_MOTORS:
+            n = _LOWLEVEL_MAX_MOTORS
+        arr: NDArray[Any] = np.ndarray(
+            (_LOWLEVEL_MAX_MOTORS, 3), dtype=np.float32, buffer=self.shm.joint_state.buf
+        )
+        arr[:n, 0] = q[:n]
+        arr[:n, 1] = dq[:n]
+        arr[:n, 2] = tau[:n]
+        self._increment_seq(5)
+
+    def write_imu(
+        self,
+        quat: NDArray[Any],
+        gyro: NDArray[Any],
+        accel: NDArray[Any],
+    ) -> None:
+        arr: NDArray[Any] = np.ndarray((10,), dtype=np.float32, buffer=self.shm.imu.buf)
+        arr[0:4] = quat
+        arr[4:7] = gyro
+        arr[7:10] = accel
+        self._increment_seq(6)
+
     def _increment_seq(self, index: int) -> None:
         seq_array: NDArray[Any] = np.ndarray((8,), dtype=np.int64, buffer=self.shm.seq.buf)
         seq_array[index] += 1
@@ -236,6 +284,43 @@ class ShmWriter:
         cmd_array[0:3] = linear
         cmd_array[3:6] = angular
         self._increment_seq(3)
+
+    # --- Low-level passthrough (parent side) ---
+
+    def write_joint_cmd(
+        self,
+        q: NDArray[Any],
+        kp: NDArray[Any],
+        kd: NDArray[Any],
+    ) -> None:
+        n = len(q)
+        if n > _LOWLEVEL_MAX_MOTORS:
+            n = _LOWLEVEL_MAX_MOTORS
+        arr: NDArray[Any] = np.ndarray(
+            (_LOWLEVEL_MAX_MOTORS, 3), dtype=np.float32, buffer=self.shm.joint_cmd.buf
+        )
+        arr[:n, 0] = q[:n]
+        arr[:n, 1] = kp[:n]
+        arr[:n, 2] = kd[:n]
+        self._increment_seq(7)
+
+    def read_joint_state(self, num_motors: int) -> NDArray[Any] | None:
+        """Return (num_motors, 3) array of (q, dq, tau), or ``None`` if no state yet."""
+        seq = self._get_seq(5)
+        if seq > 0:
+            arr: NDArray[Any] = np.ndarray(
+                (_LOWLEVEL_MAX_MOTORS, 3), dtype=np.float32, buffer=self.shm.joint_state.buf
+            )
+            return arr[:num_motors].copy()
+        return None
+
+    def read_imu(self) -> NDArray[Any] | None:
+        """Return 10-element float32 [quat(4), gyro(3), accel(3)], or ``None``."""
+        seq = self._get_seq(6)
+        if seq > 0:
+            arr: NDArray[Any] = np.ndarray((10,), dtype=np.float32, buffer=self.shm.imu.buf)
+            return arr.copy()
+        return None
 
     def read_lidar(self) -> tuple[PointCloud2 | None, int]:
         seq = self._get_seq(4)

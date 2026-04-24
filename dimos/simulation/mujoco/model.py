@@ -56,8 +56,19 @@ def get_assets() -> dict[str, bytes]:
 
 
 def load_model(
-    input_device: InputController, robot: str, scene_xml: str
+    input_device: InputController,
+    robot: str,
+    scene_xml: str,
+    skip_controller: bool = False,
 ) -> tuple[mujoco.MjModel, mujoco.MjData]:
+    """Load a MuJoCo model + data for ``robot`` inside ``scene_xml``.
+
+    When ``skip_controller=True``, the baked-in ONNX locomotion policy is
+    NOT installed as the MuJoCo control callback. Used by low-level
+    passthrough mode where an external caller (e.g. the dimos
+    ControlCoordinator via shared memory) drives ``data.ctrl`` each
+    tick.
+    """
     mujoco.set_mjcb_control(None)
 
     xml_string = get_model_xml(robot, scene_xml)
@@ -75,6 +86,9 @@ def load_model(
     ctrl_dt = 0.02
     n_substeps = round(ctrl_dt / sim_dt)
     model.opt.timestep = sim_dt
+
+    if skip_controller:
+        return model, data
 
     params = {
         "policy_path": (_get_data_dir() / f"{robot}_policy.onnx").as_posix(),

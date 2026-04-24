@@ -40,9 +40,10 @@ from dimos.simulation.mujoco.constants import (
     VIDEO_WIDTH,
 )
 from dimos.simulation.mujoco.depth_camera import depth_image_to_point_cloud
-from dimos.simulation.mujoco.model import load_model, load_scene_xml
+from dimos.simulation.mujoco.model import get_assets, load_model, load_scene_xml
 from dimos.simulation.mujoco.person_on_track import PersonPositionController
 from dimos.simulation.mujoco.shared_memory import ShmReader
+from dimos.utils.data import get_data
 from dimos.utils.logging_config import setup_logger
 
 logger = setup_logger()
@@ -72,13 +73,62 @@ class MockController:
         pass
 
 
-def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
+def _find_sensor_slice(model: mujoco.MjModel, *names: str, dim: int = 3) -> slice | None:
+    """Return the first matching sensor slice across ``names``, or None."""
+    for n in names:
+        sid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SENSOR, n)
+        if sid >= 0:
+            adr = int(model.sensor_adr[sid])
+            return slice(adr, adr + dim)
+    return None
+
+
+def _load_g1_gear_wbc_lowlevel() -> tuple[mujoco.MjModel, mujoco.MjData]:
+    """Load GR00T's ``g1_gear_wbc.xml`` for low-level passthrough mode.
+
+    This MJCF is the one the GR00T balance/walk ONNX policies were
+    trained against.  Critically, it uses ``<motor>`` (torque) actuators
+    — NOT ``<position>`` — so the subprocess does the PD itself with the
+    per-joint kp/kd coming in over shm, matching the gains in
+    ``g1_gear_wbc.yaml`` that shaped the policy during training.
+
+    Position-actuator alternatives (dimos's bundled ``unitree_g1.xml``
+    at kp=75 or menagerie's ``unitree_g1/scene.xml`` at kp=500) don't
+    match the trained gains (hips=150, knees=200, ankles=40, waist=250)
+    and produce violent instability when driven by the policy.
+
+    The XML references meshes by bare filename (``meshdir`` stripped
+    when bundled); ``get_assets()`` already injects menagerie's G1 mesh
+    bytes under those names.
+    """
+    xml_path = get_data("mujoco_sim") / "g1_gear_wbc.xml"
+    with open(xml_path) as f:
+        xml_str = f.read()
+    model = mujoco.MjModel.from_xml_string(xml_str, assets=get_assets())
+    data = mujoco.MjData(model)
+    return model, data
+
+
+def _run_simulation(config: GlobalConfig, shm: ShmReader, control_mode: str = "high_level") -> None:
     robot_name = config.robot_model or "unitree_go1"
     if robot_name == "unitree_go2":
         robot_name = "unitree_go1"
 
     controller = MockController(shm)
-    model, data = load_model(controller, robot=robot_name, scene_xml=load_scene_xml(config))
+    skip_controller = control_mode == "low_level"
+    if skip_controller and robot_name == "unitree_g1":
+        # Low-level G1: use GR00T's training MJCF (torque actuators) and
+        # run PD in this subprocess.  The dimos-bundled and menagerie
+        # MJCFs are position-actuator variants whose baked kp does NOT
+        # match the policy's trained gains.
+        model, data = _load_g1_gear_wbc_lowlevel()
+    else:
+        model, data = load_model(
+            controller,
+            robot=robot_name,
+            scene_xml=load_scene_xml(config),
+            skip_controller=skip_controller,
+        )
 
     if model is None or data is None:
         raise ValueError("Failed to load MuJoCo model: model or data is None")
@@ -97,15 +147,46 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
 
     mujoco.mj_forward(model, data)
 
-    camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
-    lidar_camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_front_camera")
+    # Camera / person machinery only exists in the high-level scenes
+    # (scene_office1 etc.).  Low-level mode uses a minimal robot scene
+    # (menagerie), so skip those lookups entirely.
+    camera_id = lidar_camera_id = lidar_left_camera_id = lidar_right_camera_id = -1
+    person_position_controller: PersonPositionController | None = None
+    if not skip_controller:
+        camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "head_camera")
+        lidar_camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_front_camera")
+        lidar_left_camera_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_left_camera"
+        )
+        lidar_right_camera_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_right_camera"
+        )
+        person_position_controller = PersonPositionController(model)
 
-    person_position_controller = PersonPositionController(model)
-
-    lidar_left_camera_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_left_camera")
-    lidar_right_camera_id = mujoco.mj_name2id(
-        model, mujoco.mjtObj.mjOBJ_CAMERA, "lidar_right_camera"
-    )
+    # Low-level passthrough precomputes: actuator→qpos/qvel maps and IMU
+    # sensor slices so the per-tick hot path is just array copies.
+    imu_gyro_slice = imu_accel_slice = None
+    act_qposadr = act_dofadr = None
+    num_motors = 0
+    if skip_controller:
+        # Menagerie uses "imu-pelvis-*" with hyphens; bundled MJX variant
+        # uses "gyro_pelvis"/"accelerometer_pelvis" with underscores.
+        # Try both so the low-level path works against either MJCF.
+        imu_gyro_slice = _find_sensor_slice(
+            model, "imu-pelvis-angular-velocity", "gyro_pelvis", dim=3
+        )
+        imu_accel_slice = _find_sensor_slice(
+            model, "imu-pelvis-linear-acceleration", "accelerometer_pelvis", dim=3
+        )
+        num_motors = int(model.nu)
+        act_qposadr = np.array(
+            [int(model.jnt_qposadr[int(model.actuator_trnid[i, 0])]) for i in range(num_motors)],
+            dtype=np.intp,
+        )
+        act_dofadr = np.array(
+            [int(model.jnt_dofadr[int(model.actuator_trnid[i, 0])]) for i in range(num_motors)],
+            dtype=np.intp,
+        )
 
     shm.signal_ready()
 
@@ -136,14 +217,54 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
         m_viewer.cam.azimuth = config.mujoco_camera_position_float[4]
         m_viewer.cam.elevation = config.mujoco_camera_position_float[5]
 
+        # Low-level startup: the subprocess comes up ~2 s before the
+        # coordinator starts ticking.  Without this flag, the robot would
+        # free-fall into a sprawl during those 2 s and the first PD tick
+        # would yank it at kp=150-200 from the fallen heap back toward
+        # the default bent-knee pose — a startup seizure.
+        controller_ready = False
+
         while m_viewer.is_running() and not shm.should_stop():
             step_start = time.time()
 
-            # Step simulation
-            for _ in range(config.mujoco_steps_per_frame):
-                mujoco.mj_step(model, data)
+            # Low-level passthrough: read per-joint (q_target, kp, kd) from
+            # shm, compute PD torque, write to data.ctrl.  The MJCF has
+            # torque-mode <motor> actuators, so this subprocess plays the
+            # role that onboard motor drivers play on real hardware.
+            # Using shm-sourced kp/kd (not MJCF-baked gains) is the whole
+            # point: the GR00T policy was trained against a specific
+            # per-joint PD, and any deviation destabilises it.
+            if skip_controller and act_qposadr is not None and act_dofadr is not None:
+                cmd = shm.read_joint_cmd(num_motors)
+                if cmd is not None:
+                    controller_ready = True
+                    q = data.qpos[act_qposadr].astype(np.float32)
+                    dq = data.qvel[act_dofadr].astype(np.float32)
+                    q_tgt = cmd[:, 0]
+                    kp = cmd[:, 1]
+                    kd = cmd[:, 2]
+                    data.ctrl[:num_motors] = kp * (q_tgt - q) - kd * dq
 
-            person_position_controller.tick(data)
+            # Step simulation.  In low-level mode we step once per outer
+            # iteration so sim-time advances in lock-step with wall-time
+            # — the coordinator is writing new PD targets at ~500 Hz and
+            # we need fresh (q, dq) → PD each step, not a stale PD held
+            # across 7 substeps (which made physics run 7× real-time and
+            # PD react to 14 ms-old state, the seizure we just debugged).
+            # High-level mode keeps the substeps-per-frame speedup because
+            # its ONNX controller lives inside mj_step via mjcb_control.
+            if skip_controller and not controller_ready:
+                # mj_forward runs kinematics but not dynamics — robot
+                # stays at MJCF initial pose until the coordinator's
+                # first command arrives.
+                mujoco.mj_forward(model, data)
+            else:
+                steps = 1 if skip_controller else config.mujoco_steps_per_frame
+                for _ in range(steps):
+                    mujoco.mj_step(model, data)
+
+            if person_position_controller is not None:
+                person_position_controller.tick(data)
 
             m_viewer.sync()
 
@@ -152,7 +273,38 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
             quat = data.qpos[3:7].copy()  # (w, x, y, z)
             shm.write_odom(pos, quat, time.time())
 
+            # Low-level passthrough: export per-joint state + IMU to shm.
+            if skip_controller and act_qposadr is not None and act_dofadr is not None:
+                q_out = data.qpos[act_qposadr].astype(np.float32)
+                dq_out = data.qvel[act_dofadr].astype(np.float32)
+                tau_out = data.actuator_force[:num_motors].astype(np.float32)
+                shm.write_joint_state(q_out, dq_out, tau_out)
+                # Base orientation from the free joint (qpos[3:7] is
+                # w,x,y,z per MuJoCo convention) — no framequat sensor
+                # needed, which menagerie's G1 doesn't ship with.
+                quat = data.qpos[3:7].astype(np.float32)
+                gyro = (
+                    data.sensordata[imu_gyro_slice].astype(np.float32)
+                    if imu_gyro_slice is not None
+                    else np.zeros(3, dtype=np.float32)
+                )
+                accel = (
+                    data.sensordata[imu_accel_slice].astype(np.float32)
+                    if imu_accel_slice is not None
+                    else np.zeros(3, dtype=np.float32)
+                )
+                shm.write_imu(quat, gyro, accel)
+
             current_time = time.time()
+
+            # In low-level mode the robot scene has no head / lidar cameras,
+            # so the video + lidar streams are skipped entirely.  Odom +
+            # joint_state + imu above are all the rerun layer needs.
+            if skip_controller:
+                time_until_next_step = model.opt.timestep - (time.time() - step_start)
+                if time_until_next_step > 0:
+                    time.sleep(time_until_next_step)
+                continue
 
             # Video rendering
             if current_time - last_video_time >= video_interval:
@@ -226,7 +378,8 @@ def _run_simulation(config: GlobalConfig, shm: ShmReader) -> None:
             if time_until_next_step > 0:
                 time.sleep(time_until_next_step)
 
-        person_position_controller.stop()
+        if person_position_controller is not None:
+            person_position_controller.stop()
 
 
 if __name__ == "__main__":
@@ -240,9 +393,10 @@ if __name__ == "__main__":
 
     global_config = pickle.loads(base64.b64decode(sys.argv[1]))
     shm_names = json.loads(sys.argv[2])
+    control_mode = sys.argv[3] if len(sys.argv) > 3 else "high_level"
 
     shm = ShmReader(shm_names)
     try:
-        _run_simulation(global_config, shm)
+        _run_simulation(global_config, shm, control_mode=control_mode)
     finally:
         shm.cleanup()

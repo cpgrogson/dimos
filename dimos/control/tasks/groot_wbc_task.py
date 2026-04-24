@@ -353,7 +353,13 @@ class GrootWBCTask(BaseControlTask):
         self._tick_count = 0
         self._first_inference = True
         self._last_action[:] = 0.0
-        self._last_targets = None
+        # Seed with the default 15-DOF bent-knee pose so the coordinator
+        # holds the robot in a stable stance during the ~decimation ticks
+        # before the first 50 Hz inference fires.  Without this, legs
+        # would get POS_STOP → 0.0 targets (= fully-extended stance) for
+        # a few ms and the 150-kp PD would yank the robot around before
+        # the policy has a chance to respond.
+        self._last_targets = self._default_15.tolist()
         with self._cmd_lock:
             self._cmd[:] = 0.0
             self._last_cmd_time = 0.0

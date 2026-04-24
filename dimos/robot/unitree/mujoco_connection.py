@@ -60,7 +60,11 @@ T = TypeVar("T")
 class MujocoConnection:
     """MuJoCo simulator connection that runs in a separate subprocess."""
 
-    def __init__(self, global_config: GlobalConfig) -> None:
+    def __init__(
+        self,
+        global_config: GlobalConfig,
+        control_mode: str = "high_level",
+    ) -> None:
         try:
             import mujoco  # noqa: F401
         except ImportError:
@@ -76,6 +80,11 @@ class MujocoConnection:
         mjx_env.ensure_menagerie_exists()
 
         self.global_config = global_config
+        # "high_level" = subprocess runs its baked ONNX locomotion policy
+        # (Twist in, sensor streams out). "low_level" = subprocess
+        # bypasses the policy and applies per-joint commands from shm
+        # (used by the dimos ControlCoordinator's sim adapters).
+        self.control_mode = control_mode
         self.process: subprocess.Popen[bytes] | None = None
         self.shm_data: ShmWriter | None = None
         self._last_video_seq = 0
@@ -125,7 +134,13 @@ class MujocoConnection:
             executable = sys.executable if sys.platform != "darwin" else "mjpython"
 
             self.process = subprocess.Popen(
-                [executable, str(LAUNCHER_PATH), config_pickle, shm_names_json],
+                [
+                    executable,
+                    str(LAUNCHER_PATH),
+                    config_pickle,
+                    shm_names_json,
+                    self.control_mode,
+                ],
             )
 
         except Exception as e:
@@ -325,6 +340,37 @@ class MujocoConnection:
             return Image.from_numpy(frame, format=ImageFormat.RGB) if frame is not None else None
 
         return self._create_stream(get_video_as_image, VIDEO_FPS, "Video")
+
+    # --- Low-level passthrough (parent-side API, when control_mode="low_level") ---
+
+    def write_motor_commands(
+        self,
+        q: NDArray[Any],
+        kp: NDArray[Any],
+        kd: NDArray[Any],
+    ) -> None:
+        """Write per-joint (q, kp, kd) into the subprocess shm.
+
+        Only meaningful when the connection was started with
+        ``control_mode="low_level"``.  The subprocess applies ``q`` to
+        ``data.ctrl``; ``kp`` / ``kd`` are currently advisory (the MJCF
+        carries baked position-actuator gains).
+        """
+        if self._is_cleaned_up or self.shm_data is None:
+            return
+        self.shm_data.write_joint_cmd(q, kp, kd)
+
+    def read_motor_states(self, num_motors: int) -> NDArray[Any] | None:
+        """Return an (num_motors, 3) float32 array of (q, dq, tau), or None."""
+        if self._is_cleaned_up or self.shm_data is None:
+            return None
+        return self.shm_data.read_joint_state(num_motors)
+
+    def read_imu_sensor(self) -> NDArray[Any] | None:
+        """Return a 10-element [quat(4), gyro(3), accel(3)] float32, or None."""
+        if self._is_cleaned_up or self.shm_data is None:
+            return None
+        return self.shm_data.read_imu()
 
     def move(self, twist: Twist, duration: float = 0.0) -> bool:
         if self._is_cleaned_up or self.shm_data is None:

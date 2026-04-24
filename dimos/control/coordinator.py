@@ -114,6 +114,11 @@ class TaskConfig:
     hardware_id: str | None = None
     # Servo task: optional initial target held until/unless a new one arrives.
     default_positions: list[float] | None = None
+    # Call ``task.start()`` right after registration so the task is live
+    # from the first tick (e.g. GR00T balance/walk needs to drive joints
+    # immediately).  Default False keeps the existing convention where
+    # tasks wait for an explicit activation (e.g. from teleop).
+    auto_start: bool = False
 
 
 @dataclass
@@ -230,6 +235,10 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
             for task_cfg in self.config.tasks:
                 task = self._create_task_from_config(task_cfg)
                 self.add_task(task)
+                if task_cfg.auto_start:
+                    start = getattr(task, "start", None)
+                    if callable(start):
+                        start()
 
         except Exception:
             # Rollback: clean up all successfully added hardware
@@ -796,16 +805,25 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
                     "Use task_invoke RPC or set transport via blueprint."
                 )
 
-        # Subscribe to twist commands if any twist base hardware configured
+        # Subscribe to twist commands if any twist base hardware is configured
+        # OR if any task accepts velocity commands (locomotion policies like
+        # GrootWBCTask duck-type with set_velocity_command).  Without the
+        # latter check, a whole-body locomotion blueprint with no BASE
+        # hardware silently drops every Twist on /cmd_vel.
         has_twist_base = any(c.hardware_type == HardwareType.BASE for c in self.config.hardware)
-        if has_twist_base:
+        with self._task_lock:
+            has_velocity_task = any(
+                callable(getattr(task, "set_velocity_command", None))
+                for task in self._tasks.values()
+            )
+        if has_twist_base or has_velocity_task:
             try:
                 self._twist_command_unsub = self.twist_command.subscribe(self._on_twist_command)
-                logger.info("Subscribed to twist_command for twist base control")
+                logger.info("Subscribed to twist_command for twist base / velocity-capable tasks")
             except Exception:
                 logger.warning(
-                    "Twist base configured but could not subscribe to twist_command. "
-                    "Use task_invoke RPC or set transport via blueprint."
+                    "Twist base or velocity-capable task configured but could not subscribe "
+                    "to twist_command. Use task_invoke RPC or set transport via blueprint."
                 )
 
         # Subscribe to buttons if any teleop_ik tasks configured (engage/disengage)
