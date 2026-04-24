@@ -14,6 +14,10 @@
 
 """Direct-joint (LowCmd_ / LowState_) adapter for the Unitree Go2.
 
+EXPERIMENTAL — not yet validated on hardware. Use only on a sat robot
+with mcf released, and smoke-test the wire format (e.g. against a fake
+LowCmd_ subscriber) before commanding real motors.
+
 Standalone class — instantiated manually, NOT registered through the
 TwistBaseAdapterRegistry. The registry only auto-discovers modules named
 adapter.py, so this file is safely invisible to discovery.
@@ -103,6 +107,9 @@ _MOTOR_MODE_DISABLE: int = 0x00
 
 class UnitreeGo2LowLevelAdapter:
     """Direct LowCmd_ / LowState_ adapter for the Go2.
+
+    EXPERIMENTAL — not yet validated on hardware. Smoke-test the wire
+    format before commanding real motors.
 
     Args:
         assume_dds_initialized: If True, skip ChannelFactoryInitialize —

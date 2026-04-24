@@ -1,33 +1,12 @@
 # Unitree Go2 drive-train adapters
 
-Two adapters live in this folder, serving different control layers of the
-same Go2 robot:
+Two adapters in this folder cover different control layers of the same Go2:
 
-| File                                         | Class                          | Layer                                    | Discovery |
-|----------------------------------------------|--------------------------------|------------------------------------------|-----------|
-| [`adapter.py`](adapter.py)                   | `UnitreeGo2TwistAdapter`       | High-level: Twist (vx, vy, wz) via SportClient + Rage-Mode joystick publisher | Auto — registered under `"unitree_go2"` in the `TwistBaseAdapterRegistry` |
-| [`adapter_lowlevel.py`](adapter_lowlevel.py) | `UnitreeGo2LowLevelAdapter`    | Low-level: per-joint `{q, dq, tau, kp, kd}` via `rt/lowcmd` | Manual — instantiated directly, invisible to auto-discovery (filename isn't `adapter.py`) |
+- **[`adapter.py`](adapter.py) — `UnitreeGo2TwistAdapter`** (high-level): Twist `(vx, vy, wz)` via SportClient, with optional Rage Mode (`rage_mode=True`, ~2.5 m/s forward envelope). Auto-registered as `"unitree_go2"` and used by blueprints like `unitree-go2-keyboard-teleop`. This is the one you want for teleop, navigation, or anything velocity-commanded.
 
-Both operate on the same DDS domain and can run in the same process
-(pass `assume_dds_initialized=True` to the low-level adapter to skip a
-second `ChannelFactoryInitialize`).
+- **[`adapter_lowlevel.py`](adapter_lowlevel.py) — `UnitreeGo2LowLevelAdapter`** (low-level): per-joint `{q, dq, tau, kp, kd}` via `rt/lowcmd`. Standalone — instantiate directly, not through the registry. **Experimental, not yet validated on hardware** — use only for joint-level research / replay, and only on a sat robot with mcf released. Test with the smoke-test patterns before going live.
 
----
-
-## Which one should I use?
-
-| Goal                                                  | Use                                 |
-|-------------------------------------------------------|-------------------------------------|
-| Teleop, navigation, any velocity-commanded behavior   | `UnitreeGo2TwistAdapter` via a blueprint (e.g. `unitree-go2-keyboard-teleop`) |
-| Rage Mode (~2.5 m/s forward envelope)                 | Same; set `rage_mode=True` on the adapter (default is off) |
-| Custom learned-policy control at the joint level      | `UnitreeGo2LowLevelAdapter` (manual) |
-| Direct `LowCmd_` research / replay of recorded torques | `UnitreeGo2LowLevelAdapter` (manual) |
-
-**Do not mix a running `UnitreeGo2TwistAdapter` with a concurrent
-`UnitreeGo2LowLevelAdapter`.** The former relies on mcf producing motor
-commands; the latter publishes `LowCmd_` that bypasses mcf entirely.
-They will fight for the motor rail and the watchdog arbitrations are
-undefined. Disconnect one before connecting the other.
+**Do not run both adapters at once.** The high-level adapter relies on mcf producing motor commands; the low-level one publishes `LowCmd_` that bypasses mcf. They will fight for the motor rail. Disconnect one before connecting the other.
 
 ---
 
