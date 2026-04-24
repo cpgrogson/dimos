@@ -129,16 +129,16 @@ def collect_children_stats(pid: int) -> list[ChildProcessStats]:
     result = []
     try:
         proc = _get_process(pid)
-        for child in proc.children(recursive=False):
-            child_proc = _get_process(child.pid)
-            try:
-                name = child_proc.name()
-                cpu = child_proc.cpu_percent(interval=None)
-                result.append(ChildProcessStats(pid=child.pid, name=name, cpu_percent=cpu))
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
     except (psutil.NoSuchProcess, psutil.AccessDenied):
-        pass
+        return result
+    for child in proc.children(recursive=False):
+        try:
+            child_proc = _get_process(child.pid)
+            name = child_proc.name()
+            cpu = child_proc.cpu_percent(interval=None)
+            result.append(ChildProcessStats(pid=child.pid, name=name, cpu_percent=cpu))
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
     return result
 
 

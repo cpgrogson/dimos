@@ -509,13 +509,13 @@ def main() -> None:
     parser.add_argument(
         "--log",
         nargs="?",
-        const=f"dtop_{time.strftime('%Y%m%d_%H%M%S')}.jsonl",
+        const=f"dtop_{time.strftime('%Y%m%d_%H%M%S')}.ignore.jsonl",
         metavar="PATH",
         help="Log stats to a JSONL file. Uses a timestamped filename if no path is given.",
     )
     args = parser.parse_args()
 
-    if args.log and args.log == parser.get_default("log"):
+    if args.log:
         print(f"Logging to {args.log}")
 
     ResourceSpyApp(topic_name=args.topic, log_path=args.log).run()

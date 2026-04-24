@@ -69,7 +69,7 @@ def _load(path: str):
     return df, labels
 
 
-def _plot(df, labels: dict[str, str], metrics: list[str], out: str | None) -> None:
+def _plot(df, labels: dict[str, str], metrics: list[str], out: str, show: bool = False) -> None:
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(len(metrics), 1, figsize=(12, 3 * len(metrics)), sharex=True)
@@ -90,11 +90,15 @@ def _plot(df, labels: dict[str, str], metrics: list[str], out: str | None) -> No
     axes[-1].set_xlabel("Time")
     fig.tight_layout()
 
-    if out:
-        fig.savefig(out, dpi=150, bbox_inches="tight")
-        print(f"Saved to {out}")
-    else:
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    print(f"Saved to {out}")
+    if show:
         plt.show()
+
+
+def _default_out(log_path: str) -> str:
+    base = log_path.removesuffix(".ignore.jsonl")
+    return f"{base}.ignore.png"
 
 
 def main() -> None:
@@ -109,12 +113,18 @@ def main() -> None:
         default="cpu_percent,pss,num_threads",
         help="Comma-separated list of metrics to plot (default: cpu_percent,pss,num_threads).",
     )
-    parser.add_argument("--out", metavar="PATH", help="Save plot to file instead of displaying it.")
+    parser.add_argument(
+        "--out", metavar="PATH", help="Output image path (default: <log>.ignore.png)."
+    )
+    parser.add_argument(
+        "--show", action="store_true", help="Open the plot interactively after saving."
+    )
     args = parser.parse_args()
 
+    out = args.out or _default_out(args.log)
     metrics = [m.strip() for m in args.metrics.split(",")]
     df, labels = _load(args.log)
-    _plot(df, labels, metrics, args.out)
+    _plot(df, labels, metrics, out, args.show)
 
 
 if __name__ == "__main__":
