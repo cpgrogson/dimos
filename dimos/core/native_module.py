@@ -80,15 +80,25 @@ class NativeModuleConfig(ModuleConfig):
     shutdown_timeout: float = 10.0
     log_format: LogFormat = LogFormat.TEXT
 
+    # New version of Native Modules read json configs from stdin
+    # Enable this to read from stdin instead of cli args
+    stdin_config: bool = False
+
     # Override in subclasses to exclude fields from CLI arg generation
     cli_exclude: frozenset[str] = frozenset()
 
-    def to_cli_args(self) -> list[str]:
-        """Auto-convert subclass config fields to CLI args.
+    def to_config_dict(self) -> dict[str, Any]:
+        """
+        Return module-specific config fields as a plain dict (for stdin JSON).
+        """
+        ignore_fields = set(NativeModuleConfig.model_fields)
+        return {
+            k: v for k, v in self.model_dump().items() if k not in ignore_fields and v is not None
+        }
 
-        Iterates fields defined on the concrete subclass (not NativeModuleConfig
-        or its parents) and converts them to ``["--name", str(value)]`` pairs.
-        Skips fields whose values are ``None`` and fields in ``cli_exclude``.
+    def to_cli_args(self) -> list[str]:
+        """
+        Auto-convert subclass config fields to CLI args.
         """
         ignore_fields = {f for f in NativeModuleConfig.model_fields}
         args: list[str] = []
