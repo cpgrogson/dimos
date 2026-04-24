@@ -17,18 +17,16 @@ uv pip install -e '.[dds]'
 
 ```bash
 # Per-venv (auto-set on `source .venv/bin/activate`)
-NIX_CYCLONEDDS=$(readlink -f ./result)
 cat >> .venv/bin/activate <<EOF
-export CYCLONEDDS_HOME=$NIX_CYCLONEDDS
+export CYCLONEDDS_HOME=$(readlink -f ./result)
 export LD_LIBRARY_PATH="\$CYCLONEDDS_HOME/lib:\${LD_LIBRARY_PATH:-}"
 EOF
 ```
 
 ```bash
 # Global (every shell)
-NIX_CYCLONEDDS=$(readlink -f ./result)
 cat >> ~/.bashrc <<EOF
-export CYCLONEDDS_HOME=$NIX_CYCLONEDDS
+export CYCLONEDDS_HOME=$(readlink -f ./result)
 export LD_LIBRARY_PATH="\$CYCLONEDDS_HOME/lib:\${LD_LIBRARY_PATH:-}"
 EOF
 ```

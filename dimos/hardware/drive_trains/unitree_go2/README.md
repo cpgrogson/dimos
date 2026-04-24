@@ -24,11 +24,10 @@ library at install and runtime. Easiest: append to `.venv/bin/activate`
 so it's set every time you activate the venv:
 
 ```bash
-NIX_CYCLONEDDS=$(readlink -f ./result)
 cat >> .venv/bin/activate <<EOF
 
 # Nix-provided cyclonedds C library
-export CYCLONEDDS_HOME=$NIX_CYCLONEDDS
+export CYCLONEDDS_HOME=$(readlink -f ./result)
 export LD_LIBRARY_PATH="\$CYCLONEDDS_HOME/lib:\${LD_LIBRARY_PATH:-}"
 EOF
 ```
