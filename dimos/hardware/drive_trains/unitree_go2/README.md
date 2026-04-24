@@ -65,6 +65,14 @@ Install the `unitree-dds` extra (pulls `unitree-sdk2py-dimos` + `cyclonedds`):
 uv pip install -e ".[unitree-dds]"
 ```
 
+Build the CycloneDDS C library via nix (once per machine - creates
+`./result` at the repo root, which dimos auto-detects). Skip if you
+already have a working DDS install on the system:
+
+```bash
+nix build nixpkgs#cyclonedds
+```
+
 Set the robot IP and launch a blueprint:
 
 ```bash
