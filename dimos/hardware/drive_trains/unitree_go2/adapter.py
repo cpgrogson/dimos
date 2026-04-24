@@ -124,6 +124,7 @@ class UnitreeGo2TwistAdapter:
         self._session_lock = threading.Lock()
         self._speed_level = speed_level
         self._rage_mode_default = rage_mode
+        self._last_guard_warn_ts: float = 0.0
 
     def connect(self) -> bool:
         """Connect to Go2, verify sport mode, stand up, enter FreeWalk.
@@ -199,8 +200,7 @@ class UnitreeGo2TwistAdapter:
 
         except (OSError, RuntimeError, AttributeError, TimeoutError) as e:
             logger.error(f"[Go2] Failed to connect: {e}")
-            with self._session_lock:
-                self._session = None
+            self.disconnect()
             return False
 
     def disconnect(self) -> None:
@@ -306,11 +306,11 @@ class UnitreeGo2TwistAdapter:
         session = self._get_session()
 
         if not session.enabled:
-            logger.warning("[Go2] Not enabled, ignoring velocity command")
+            self._warn_guard("Not enabled, ignoring velocity command")
             return False
 
         if not session.locomotion_ready:
-            logger.warning("[Go2] Locomotion not ready, ignoring velocity command")
+            self._warn_guard("Locomotion not ready, ignoring velocity command")
             return False
 
         vx, vy, wz = velocities
@@ -320,6 +320,18 @@ class UnitreeGo2TwistAdapter:
             return True
 
         return self._send_velocity(vx, vy, wz)
+
+    def _warn_guard(self, msg: str) -> None:
+        """Rate-limited guard warning (at most once per second).
+
+        write_velocities runs at 100 Hz from the tick loop; without
+        throttling, a sustained guard miss would emit 100 warnings/s.
+        """
+        now = time.monotonic()
+        if now - self._last_guard_warn_ts < 1.0:
+            return
+        self._last_guard_warn_ts = now
+        logger.warning(f"[Go2] {msg}")
 
     def write_stop(self) -> bool:
         """Stop motion via SportClient.StopMove(). Leaves robot standing."""
@@ -357,10 +369,6 @@ class UnitreeGo2TwistAdapter:
         _session_lock so it never returns stale True after disconnect()."""
         with self._session_lock:
             return self._session is not None and self._session.enabled
-
-    # =========================================================================
-    # Mode inspection / control (beyond TwistBaseAdapter)
-    # =========================================================================
 
     def check_mode(self) -> str | None:
         """Return the current MotionSwitcher mode name, or None on RPC fail.
@@ -471,10 +479,6 @@ class UnitreeGo2TwistAdapter:
         logger.info(f"[Go2] SpeedLevel set to {level}")
         return True
 
-    # =========================================================================
-    # Extended mcf AI controller RPCs (undocumented — reverse-engineered)
-    # =========================================================================
-
     def set_rage_mode(self, enable: bool) -> bool:
         """Toggle Rage Mode (api_id 2059) — widens forward envelope to ~2.5 m/s.
 
@@ -509,7 +513,9 @@ class UnitreeGo2TwistAdapter:
         else:
             self._stop_rage_joystick(session)
             with session.lock:
-                session.client.SwitchJoystick(False)
+                sj_ret = session.client.SwitchJoystick(False)
+            if sj_ret != 0:
+                logger.warning(f"[Go2] SwitchJoystick(False) after rage returned {sj_ret}")
 
         logger.info(f"[Go2] Rage Mode {'enabled' if enable else 'disabled'}")
         return True
@@ -534,7 +540,11 @@ class UnitreeGo2TwistAdapter:
         session.rage_thread.start()
 
     def _stop_rage_joystick(self, session: _Session) -> None:
-        """Stop the publisher thread and release the DDS writer."""
+        """Stop the publisher thread and release the DDS writer.
+
+        Closes ChannelPublisher explicitly to avoid leaking the DDS writer
+        across repeated set_rage_mode(True/False) cycles.
+        """
         session.rage_active = False
         if session.rage_stop is not None:
             session.rage_stop.set()
@@ -542,7 +552,12 @@ class UnitreeGo2TwistAdapter:
             session.rage_thread.join(timeout=1.0)
             session.rage_thread = None
         session.rage_stop = None
-        session.rage_pub = None
+        if session.rage_pub is not None:
+            try:
+                session.rage_pub.Close()
+            except (OSError, RuntimeError) as e:
+                logger.warning(f"[Go2] Rage publisher Close raised: {e}")
+            session.rage_pub = None
 
     def _rage_joystick_loop(self, session: _Session) -> None:
         """Publish the latest rage_cmd as a WirelessController_ message.
@@ -602,10 +617,6 @@ class UnitreeGo2TwistAdapter:
             logger.warning(f"[Go2] _Call({api_id}, {body}) -> code={code} data={data!r}")
             return False
         return True
-
-    # =========================================================================
-    # Internal helpers
-    # =========================================================================
 
     def _get_session(self) -> _Session:
         """Return active session or raise RuntimeError if disconnected.
