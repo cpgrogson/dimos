@@ -114,7 +114,11 @@ class UnitreeG1LowLevelAdapter:
             from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_, LowState_
             from unitree_sdk2py.utils.crc import CRC
 
-            # 1. Initialise DDS transport
+            # 1. Initialise DDS transport.  NOTE: the cyclonedds Python
+            # wheel reads CYCLONEDDS_HOME at runtime — it must point at
+            # the local cyclonedds install (e.g. ~/cyclonedds/install)
+            # before this call or DDS topic creation later fails with
+            # PRECONDITION_NOT_MET.  Add to your shell rc.
             logger.info(
                 f"Initializing DDS (G1 low-level) with interface {self._network_interface} "
                 f"on domain {self._domain_id}..."
@@ -160,8 +164,8 @@ class UnitreeG1LowLevelAdapter:
             logger.info(f"G1 low-level adapter connected (mode_machine={self._mode_machine})")
             return True
 
-        except Exception as e:
-            logger.error(f"Failed to connect G1 low-level adapter: {e}")
+        except Exception:
+            logger.exception("Failed to connect G1 low-level adapter (full traceback):")
             self._connected = False
             return False
 
