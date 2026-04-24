@@ -41,6 +41,22 @@ app.run("keyboard-teleop")  # This will say `KeyboardTeleop is already deployed`
 app.stop()
 ```
 
+## Peeking streams
+
+`peek_stream(name, timeout)` pulls the next message from any running
+module's stream. Useful for quick inspection without writing a
+subscriber:
+
+```python
+img = app.peek_stream("color_image", 1.0)
+if img is None:
+    print("no frame in 1s")
+```
+
+If multiple modules expose a stream with the same name, the first
+match wins (outputs preferred over inputs). Raises `LookupError` if no
+module exposes the name. Works identically on a connected `Dimos`.
+
 ## Remote mode
 
 Start a daemon first (via CLI or another script), then connect to it:

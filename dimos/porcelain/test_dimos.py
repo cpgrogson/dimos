@@ -67,6 +67,16 @@ def test_skills_before_run(app):
         _ = app.skills
 
 
+def test_peek_stream_before_run(app):
+    with pytest.raises(RuntimeError, match="No modules are running"):
+        app.peek_stream("whatever")
+
+
+def test_peek_stream_unknown_raises(running_app):
+    with pytest.raises(LookupError, match="No running module exposes"):
+        running_app.peek_stream("definitely_not_a_stream")
+
+
 def test_restart_before_run(app):
     with pytest.raises(RuntimeError, match="No modules are running"):
         app.restart(StressTestModule)
