@@ -115,7 +115,7 @@ class UnitreeGo2TwistAdapter:
         dof: int = 3,
         speed_level: int = 1,
         rage_mode: bool = False,
-        **_: object,
+        **_: Any,
     ) -> None:
         if dof != 3:
             raise ValueError(f"Go2 only supports 3 DOF (vx, vy, wz), got {dof}")
@@ -197,7 +197,7 @@ class UnitreeGo2TwistAdapter:
 
             return True
 
-        except Exception as e:
+        except (OSError, RuntimeError, AttributeError, TimeoutError) as e:
             logger.error(f"[Go2] Failed to connect: {e}")
             with self._session_lock:
                 self._session = None
@@ -224,13 +224,13 @@ class UnitreeGo2TwistAdapter:
             with session.lock:
                 session.client.StandDown()
             time.sleep(0.3)
-        except Exception as e:
+        except (OSError, RuntimeError, TimeoutError) as e:
             logger.error(f"[Go2] Error during disconnect: {e}")
 
         if session.state_sub is not None:
             try:
                 session.state_sub.Close()
-            except Exception as e:
+            except (OSError, RuntimeError) as e:
                 logger.error(f"[Go2] Error closing state subscriber: {e}")
 
     def is_connected(self) -> bool:
@@ -491,7 +491,9 @@ class UnitreeGo2TwistAdapter:
         with session.lock:
             ret = session.client.BalanceStand()
         if ret != 0:
-            logger.warning(f"[Go2] BalanceStand before rage toggle returned {ret}")
+            # Non-zero is usually benign here (already balanced / FSM transition
+            # in progress) — only fatal if the rage toggle below also fails.
+            logger.info(f"[Go2] BalanceStand returned {ret} (likely already balanced — proceeding)")
         time.sleep(0.3)
 
         if not self._call_sport_api(self._SPORT_API_ID_RAGEMODE, {"data": enable}):
@@ -509,7 +511,7 @@ class UnitreeGo2TwistAdapter:
             with session.lock:
                 session.client.SwitchJoystick(False)
 
-        logger.info(f"[Go2]  Rage Mode {'enabled' if enable else 'disabled'}")
+        logger.info(f"[Go2] Rage Mode {'enabled' if enable else 'disabled'}")
         return True
 
     def _start_rage_joystick(self, session: _Session) -> None:
@@ -584,6 +586,10 @@ class UnitreeGo2TwistAdapter:
         methods in __init__. We call _RegistApi() first (idempotent dict
         set) so undocumented IDs like RAGEMODE reach the robot.
 
+        Uses leading-underscore SDK methods (_RegistApi, _Call) — these
+        are not part of the public SDK contract. Verified working against
+        unitree-sdk2py-dimos>=1.0.2; retest if the SDK is upgraded.
+
         Returns True on RPC code 0. On failure, logs code + response.
         """
         session = self._get_session()
@@ -602,7 +608,12 @@ class UnitreeGo2TwistAdapter:
     # =========================================================================
 
     def _get_session(self) -> _Session:
-        """Return active session or raise RuntimeError if disconnected."""
+        """Return active session or raise RuntimeError if disconnected.
+
+        Note: callers using the returned session.lock must NEVER then
+        try to acquire self._session_lock — see the lock-ordering rule
+        in the class docstring.
+        """
         session = self._session
         if session is None:
             raise RuntimeError("Go2 not connected")
@@ -639,12 +650,12 @@ class UnitreeGo2TwistAdapter:
         with session.lock:
             sl_ret = session.client.SpeedLevel(self._speed_level)
         if sl_ret == 0:
-            logger.info(f"[Go2]  SpeedLevel({self._speed_level}) applied")
+            logger.info(f"[Go2] SpeedLevel({self._speed_level}) applied")
         else:
             logger.warning(f"[Go2] SpeedLevel({self._speed_level}) returned {sl_ret}")
 
         session.locomotion_ready = True
-        logger.info("[Go2]  Locomotion ready")
+        logger.info("[Go2] Locomotion ready")
         return True
 
     def _send_velocity(self, vx: float, vy: float, wz: float) -> bool:
