@@ -69,10 +69,19 @@ class UnitreeG1LowLevelAdapter:
 
     Args:
         network_interface: DDS network interface name or ID (default: "eth0").
+        domain_id: DDS domain ID.  Real robot uses 0; unitree_mujoco sim
+            defaults to 1.  Changing domain lets the same adapter bind to
+            sim or real with no code change.
     """
 
-    def __init__(self, network_interface: int | str = 0, **_: object) -> None:
+    def __init__(
+        self,
+        network_interface: int | str = 0,
+        domain_id: int = 0,
+        **_: object,
+    ) -> None:
         self._network_interface = network_interface
+        self._domain_id = domain_id
 
         self._connected = False
         self._lock = threading.Lock()
@@ -107,9 +116,10 @@ class UnitreeG1LowLevelAdapter:
 
             # 1. Initialise DDS transport
             logger.info(
-                f"Initializing DDS (G1 low-level) with interface {self._network_interface}..."
+                f"Initializing DDS (G1 low-level) with interface {self._network_interface} "
+                f"on domain {self._domain_id}..."
             )
-            ChannelFactoryInitialize(0, self._network_interface)
+            ChannelFactoryInitialize(self._domain_id, self._network_interface)
 
             # 2. Create publisher / subscriber
             self._publisher = ChannelPublisher("rt/lowcmd", LowCmd_)

@@ -83,22 +83,26 @@ class TaskConfig:
 
     Attributes:
         name: Task name (e.g., "traj_arm")
-        type: Task type ("trajectory", "servo", "velocity", "cartesian_ik", "teleop_ik")
+        type: Task type ("trajectory", "servo", "velocity", "cartesian_ik", "teleop_ik", "groot_wbc")
         joint_names: List of joint names this task controls
         priority: Task priority (higher wins arbitration)
-        model_path: Path to URDF/MJCF for IK solver (cartesian_ik/teleop_ik only)
+        model_path: Path to URDF/MJCF for IK solver (cartesian_ik/teleop_ik)
+            or directory containing balance.onnx/walk.onnx (groot_wbc).
         ee_joint_id: End-effector joint ID in model (cartesian_ik/teleop_ik only)
         hand: "left" or "right" controller hand (teleop_ik only)
         gripper_joint: Joint name for gripper virtual joint
         gripper_open_pos: Gripper position at trigger 0.0
         gripper_closed_pos: Gripper position at trigger 1.0
+        hardware_id: Hardware id this task reads extra state from
+            (required by groot_wbc — pulls the WholeBodyAdapter for IMU
+            and the full joint list for observation assembly).
     """
 
     name: str
     type: str = "trajectory"
     joint_names: list[str] = field(default_factory=lambda: [])
     priority: int = 10
-    # Cartesian IK / Teleop IK specific
+    # Cartesian IK / Teleop IK / GR00T WBC specific
     model_path: str | Path | None = None
     ee_joint_id: int = 6
     hand: Literal["left", "right"] | None = None  # teleop_ik only
@@ -106,6 +110,10 @@ class TaskConfig:
     gripper_joint: str | None = None
     gripper_open_pos: float = 0.0
     gripper_closed_pos: float = 0.0
+    # Tasks that need a hardware reference (e.g. groot_wbc for IMU + 29-DOF state)
+    hardware_id: str | None = None
+    # Servo task: optional initial target held until/unless a new one arrives.
+    default_positions: list[float] | None = None
 
 
 @dataclass
@@ -288,6 +296,7 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
         return whole_body_adapter_registry.create(
             component.adapter_type,
             network_interface=addr if addr is not None else 0,
+            domain_id=component.domain_id,
         )
 
     def _create_task_from_config(self, cfg: TaskConfig) -> ControlTask:
@@ -308,12 +317,18 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
         elif task_type == "servo":
             from dimos.control.tasks import JointServoTask, JointServoTaskConfig
 
+            servo_cfg_kwargs: dict[str, object] = {
+                "joint_names": cfg.joint_names,
+                "priority": cfg.priority,
+            }
+            if cfg.default_positions is not None:
+                servo_cfg_kwargs["default_positions"] = cfg.default_positions
+                # Zero timeout pairs naturally with default-hold — otherwise
+                # the task times out even though it's holding a valid target.
+                servo_cfg_kwargs["timeout"] = 0.0
             return JointServoTask(
                 cfg.name,
-                JointServoTaskConfig(
-                    joint_names=cfg.joint_names,
-                    priority=cfg.priority,
-                ),
+                JointServoTaskConfig(**servo_cfg_kwargs),  # type: ignore[arg-type]
             )
 
         elif task_type == "velocity":
@@ -361,6 +376,40 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
                     gripper_open_pos=cfg.gripper_open_pos,
                     gripper_closed_pos=cfg.gripper_closed_pos,
                 ),
+            )
+
+        elif task_type == "groot_wbc":
+            from dimos.control.tasks.groot_wbc_task import (
+                GrootWBCTask,
+                GrootWBCTaskConfig,
+            )
+
+            if cfg.model_path is None:
+                raise ValueError(
+                    f"GrootWBCTask '{cfg.name}' requires model_path "
+                    f"(directory containing balance.onnx + walk.onnx)"
+                )
+            if cfg.hardware_id is None:
+                raise ValueError(f"GrootWBCTask '{cfg.name}' requires hardware_id in TaskConfig")
+            hw = self._hardware.get(cfg.hardware_id)
+            if hw is None:
+                raise ValueError(
+                    f"GrootWBCTask '{cfg.name}' references unknown hardware "
+                    f"'{cfg.hardware_id}'. List the hardware before the task "
+                    f"in the blueprint config."
+                )
+
+            model_dir = Path(cfg.model_path)
+            return GrootWBCTask(
+                cfg.name,
+                GrootWBCTaskConfig(
+                    balance_onnx=model_dir / "balance.onnx",
+                    walk_onnx=model_dir / "walk.onnx",
+                    joint_names=cfg.joint_names,
+                    all_joint_names=hw.joint_names,
+                    priority=cfg.priority,
+                ),
+                adapter=hw.adapter,
             )
 
         else:
@@ -611,6 +660,16 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
         if names:
             joint_state = JointState(name=names, velocity=velocities)
             self._on_joint_command(joint_state)
+
+        # Also route to tasks that accept a (vx, vy, yaw_rate) command —
+        # e.g. locomotion policies like GrootWBCTask.  Duck-typed: any
+        # task exposing set_velocity_command opts in.
+        t_now = time.perf_counter()
+        with self._task_lock:
+            for task in self._tasks.values():
+                set_vel = getattr(task, "set_velocity_command", None)
+                if set_vel is not None:
+                    set_vel(msg.linear.x, msg.linear.y, msg.angular.z, t_now)
 
     def _on_buttons(self, msg: Buttons) -> None:
         """Forward button state to all tasks."""

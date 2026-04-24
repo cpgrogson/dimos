@@ -46,11 +46,17 @@ class JointServoTaskConfig:
         joint_names: List of joint names this task controls
         priority: Priority for arbitration (higher wins)
         timeout: If no command received for this many seconds, go inactive (0 = never timeout)
+        default_positions: Optional initial target held until/unless a
+            new target arrives via set_target(). Must match joint_names
+            length if provided. Useful for "hold at this pose" tasks
+            (e.g. arms during whole-body locomotion). Pair with
+            timeout=0.0 to hold indefinitely.
     """
 
     joint_names: list[str]
     priority: int = 10
     timeout: float = 0.5  # 500ms default timeout
+    default_positions: list[float] | None = None
 
 
 class JointServoTask(BaseControlTask):
@@ -98,6 +104,15 @@ class JointServoTask(BaseControlTask):
         self._target: list[float] | None = None
         self._last_update_time: float = 0.0
         self._active = False
+
+        if config.default_positions is not None:
+            if len(config.default_positions) != self._num_joints:
+                raise ValueError(
+                    f"JointServoTask '{name}': default_positions length "
+                    f"{len(config.default_positions)} does not match "
+                    f"joint_names length {self._num_joints}"
+                )
+            self._target = list(config.default_positions)
 
         logger.info(f"JointServoTask {name} initialized for joints: {config.joint_names}")
 

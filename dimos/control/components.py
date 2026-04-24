@@ -50,6 +50,9 @@ class HardwareComponent:
         address: Connection address - IP for TCP, port for CAN
         auto_enable: Whether to auto-enable servos
         gripper_joints: Joints that use adapter gripper methods (separate from joints).
+        domain_id: DDS domain ID for adapters that use DDS transport
+            (e.g. Unitree G1). Real robot uses 0; unitree_mujoco sim
+            defaults to 1. Ignored by non-DDS adapters.
     """
 
     hardware_id: HardwareId
@@ -59,6 +62,12 @@ class HardwareComponent:
     address: str | None = None
     auto_enable: bool = True
     gripper_joints: list[JointName] = field(default_factory=list)
+    domain_id: int = 0
+    # Per-joint PD gains used by ConnectedWholeBody when translating
+    # position commands to MotorCommand. None → adapter/component
+    # defaults. Must match `joints` length when set.
+    kp: list[float] | None = None
+    kd: list[float] | None = None
 
     @property
     def all_joints(self) -> list[JointName]:

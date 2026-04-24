@@ -351,6 +351,30 @@ class ConnectedWholeBody(ConnectedHardware):
         self._component = component
         self._joint_names = component.joints
 
+        # Resolve per-joint PD gains once at wire-up time.  Falls back
+        # to _DEFAULT_KP / _DEFAULT_KD if the blueprint didn't specify.
+        n = len(self._joint_names)
+        if component.kp is not None:
+            if len(component.kp) != n:
+                raise ValueError(
+                    f"HardwareComponent '{component.hardware_id}': kp length "
+                    f"{len(component.kp)} does not match joints length {n}"
+                )
+            self._kp = list(component.kp)
+        else:
+            self._kp = [_DEFAULT_KP] * n
+        if component.kd is not None:
+            if len(component.kd) != n:
+                raise ValueError(
+                    f"HardwareComponent '{component.hardware_id}': kd length "
+                    f"{len(component.kd)} does not match joints length {n}"
+                )
+            self._kd = list(component.kd)
+        else:
+            self._kd = [_DEFAULT_KD] * n
+        self._kp_by_name = dict(zip(self._joint_names, self._kp, strict=False))
+        self._kd_by_name = dict(zip(self._joint_names, self._kd, strict=False))
+
         self._last_commanded: dict[str, float] = {}
         self._initialized = False
         self._warned_unknown_joints: set[str] = set()
@@ -408,8 +432,8 @@ class ConnectedWholeBody(ConnectedHardware):
             MotorCommand(
                 q=self._last_commanded[name],
                 dq=0.0,
-                kp=_DEFAULT_KP,
-                kd=_DEFAULT_KD,
+                kp=self._kp_by_name[name],
+                kd=self._kd_by_name[name],
                 tau=0.0,
             )
             for name in self._joint_names
