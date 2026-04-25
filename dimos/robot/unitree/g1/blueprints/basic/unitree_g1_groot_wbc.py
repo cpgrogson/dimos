@@ -60,6 +60,7 @@ Environment:
 from __future__ import annotations
 
 import os
+from pathlib import Path as FilePath
 
 from dimos.control.components import (
     HardwareComponent,
@@ -70,9 +71,10 @@ from dimos.control.coordinator import TaskConfig, control_coordinator
 from dimos.core.blueprints import autoconnect
 from dimos.core.global_config import global_config
 from dimos.core.transport import LCMTransport
-from dimos.msgs.geometry_msgs import Twist
+from dimos.msgs.geometry_msgs import PoseStamped, Twist
 from dimos.msgs.sensor_msgs import JointState
 from dimos.msgs.std_msgs.Bool import Bool as DimosBool
+from dimos.visualization.viser import viser_render
 from dimos.web.websocket_vis.websocket_vis_module import websocket_vis
 
 _g1_joints = make_humanoid_joints("g1")
@@ -261,6 +263,40 @@ _g1_ws_vis = websocket_vis().transports(
     },
 )
 
-unitree_g1_groot_wbc = autoconnect(_g1_coordinator, _g1_ws_vis)
+# Viser browser viewer: overlays the live robot (FK from joint_state +
+# odom) on a Gaussian splat of the workspace.  Sim-only — there is no
+# /odom on real hardware in this blueprint, and the splat is a static
+# capture, not the live world the robot is in.
+#
+# The splat asset is bring-your-own (it isn't bundled in the repo
+# because PLY files are hundreds of MB).  Drop a ``.ply`` and an
+# optional ``.yaml`` alignment file at:
+#
+#   data/scenes/dimos_office.ply
+#   data/scenes/dimos_office.yaml   (optional; identity defaults if absent)
+#
+# Without the PLY the module is silently skipped and the rest of the
+# blueprint runs unchanged.  YAML schema: see SplatAlignment in
+# dimos/visualization/viser/splat.py.
+_viser_modules: tuple = ()
+if global_config.simulation:
+    _splat_path = FilePath("data/scenes/dimos_office.ply")
+    _alignment_yaml = FilePath("data/scenes/dimos_office.yaml")
+    _mjcf_path = "data/mujoco_sim/g1_gear_wbc.xml"
+    if _splat_path.exists():
+        _g1_viser = viser_render(
+            splat_path=str(_splat_path),
+            mjcf_path=_mjcf_path,
+            alignment_yaml=str(_alignment_yaml) if _alignment_yaml.exists() else None,
+            port=8082,
+        ).transports(
+            {
+                ("joint_state", JointState): LCMTransport("/coordinator/joint_state", JointState),
+                ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
+            },
+        )
+        _viser_modules = (_g1_viser,)
+
+unitree_g1_groot_wbc = autoconnect(_g1_coordinator, _g1_ws_vis, *_viser_modules)
 
 __all__ = ["unitree_g1_groot_wbc"]
