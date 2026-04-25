@@ -48,6 +48,7 @@ from dimos.utils.logging_config import setup_logger
 if TYPE_CHECKING:
     from dimos.core.global_config import GlobalConfig
     from dimos.hardware.whole_body.registry import WholeBodyAdapterRegistry
+    from dimos.msgs.geometry_msgs import PoseStamped
 
 logger = setup_logger()
 
@@ -177,6 +178,15 @@ class SimMujocoG1WholeBodyAdapter:
             accelerometer=accel,
             rpy=(roll, pitch, yaw),
         )
+
+    def read_odom(self) -> PoseStamped | None:
+        # MujocoConnection.get_odom_message() reads the latest base pose
+        # the subprocess wrote to shm and converts it into a PoseStamped
+        # (also handling the wxyz -> xyzw quaternion swap).  Returns None
+        # until the subprocess writes its first sample.
+        if not self._connected or self._connection is None:
+            return None
+        return self._connection.get_odom_message()
 
     def write_motor_commands(self, commands: list[MotorCommand]) -> bool:
         if not self._connected or self._connection is None:

@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from dimos.control.components import HardwareId, JointName, TaskName
     from dimos.control.hardware_interface import ConnectedHardware
     from dimos.hardware.manipulators.spec import ControlMode
+    from dimos.msgs.geometry_msgs import PoseStamped
 
 logger = setup_logger()
 
@@ -93,6 +94,7 @@ class TickLoop:
         task_lock: threading.Lock,
         joint_to_hardware: dict[JointName, HardwareId],
         publish_callback: Callable[[JointState], None] | None = None,
+        odom_callback: Callable[[PoseStamped], None] | None = None,
         frame_id: str = "coordinator",
         log_ticks: bool = False,
     ) -> None:
@@ -103,6 +105,7 @@ class TickLoop:
         self._task_lock = task_lock
         self._joint_to_hardware = joint_to_hardware
         self._publish_callback = publish_callback
+        self._odom_callback = odom_callback
         self._frame_id = frame_id
         self._log_ticks = log_ticks
 
@@ -194,6 +197,8 @@ class TickLoop:
         # === PHASE 7: PUBLISH AGGREGATED STATE ===
         if self._publish_callback:
             self._publish_joint_state(joint_states)
+        if self._odom_callback:
+            self._publish_odom()
 
         # Optional logging
         if self._log_ticks:
@@ -395,6 +400,32 @@ class TickLoop:
         )
         if self._publish_callback:
             self._publish_callback(msg)
+
+    def _publish_odom(self) -> None:
+        """Poll WholeBodyAdapter.read_odom() across hardware, publish first hit.
+
+        Multi-base-pose semantics are unspecified, and no current
+        blueprint runs more than one whole-body adapter; first non-None
+        wins so single-humanoid setups Just Work.  Adapters that don't
+        implement ``read_odom`` (older third-party ones) are skipped.
+        """
+        if not self._odom_callback:
+            return
+        with self._hardware_lock:
+            hardware_items = list(self._hardware.values())
+        for hw in hardware_items:
+            adapter = getattr(hw, "adapter", None)
+            read_odom = getattr(adapter, "read_odom", None)
+            if read_odom is None:
+                continue
+            try:
+                pose = read_odom()
+            except Exception as e:
+                logger.debug(f"read_odom on {type(adapter).__name__} raised: {e}")
+                continue
+            if pose is not None:
+                self._odom_callback(pose)
+                return
 
 
 __all__ = ["TickLoop"]

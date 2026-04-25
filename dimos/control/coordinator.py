@@ -142,6 +142,9 @@ class ControlCoordinatorConfig(ModuleConfig):
         tick_rate: Control loop frequency in Hz (default: 100)
         publish_joint_state: Whether to publish aggregated JointState
         joint_state_frame_id: Frame ID for published JointState
+        publish_odom: Whether to poll WholeBodyAdapter.read_odom() each
+            tick and publish on the ``odom`` Out port (silent no-op when
+            no adapter exposes odom).
         log_ticks: Whether to log tick information (verbose)
         hardware: List of hardware configurations to create on start
         tasks: List of task configurations to create on start
@@ -150,6 +153,7 @@ class ControlCoordinatorConfig(ModuleConfig):
     tick_rate: float = 100.0
     publish_joint_state: bool = True
     joint_state_frame_id: str = "coordinator"
+    publish_odom: bool = True
     log_ticks: bool = False
     hardware: list[HardwareComponent] = field(default_factory=lambda: [])
     tasks: list[TaskConfig] = field(default_factory=lambda: [])
@@ -190,6 +194,11 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
 
     # Output: Aggregated joint state for external consumers
     joint_state: Out[JointState]
+
+    # Output: Latest base pose, when any whole-body adapter exposes one
+    # via ``read_odom()`` (sim adapters do; real-hw adapters typically
+    # don't until an estimator is wired).  Quiet when no source.
+    odom: Out[PoseStamped]
 
     # Input: Streaming joint commands for real-time control
     joint_command: In[JointState]
@@ -824,6 +833,7 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
 
         # Create and start tick loop
         publish_cb = self.joint_state.publish if self.config.publish_joint_state else None
+        odom_cb = self.odom.publish if self.config.publish_odom else None
         self._tick_loop = TickLoop(
             tick_rate=self.config.tick_rate,
             hardware=self._hardware,
@@ -832,6 +842,7 @@ class ControlCoordinator(Module[ControlCoordinatorConfig]):
             task_lock=self._task_lock,
             joint_to_hardware=self._joint_to_hardware,
             publish_callback=publish_cb,
+            odom_callback=odom_cb,
             frame_id=self.config.joint_state_frame_id,
             log_ticks=self.config.log_ticks,
         )

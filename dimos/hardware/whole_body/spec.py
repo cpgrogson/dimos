@@ -24,7 +24,10 @@ Supports any number of motors — quadrupeds (12 DOF), humanoids (29 DOF), etc.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from dimos.msgs.geometry_msgs import PoseStamped
 
 # Sentinel values from Unitree SDK — used to signal "no command" for a DOF.
 POS_STOP: float = 2.146e9
@@ -95,6 +98,18 @@ class WholeBodyAdapter(Protocol):
     def read_imu(self) -> IMUState:
         """Read IMU state."""
         ...
+
+    def read_odom(self) -> PoseStamped | None:
+        """Read latest base pose in world frame, if the adapter has one.
+
+        Sim adapters return the simulator's ground-truth base pose.
+        Real-hardware adapters return None unless they wire up an
+        onboard estimator (IMU + leg kinematics fusion, DDS odom topic,
+        ROS /odom subscription, etc.).  The coordinator publishes
+        ``odom: Out[PoseStamped]`` only when this returns a value, so a
+        ``None`` return is a quiet no-op rather than a default zero pose.
+        """
+        return None
 
     # --- Control ---
 

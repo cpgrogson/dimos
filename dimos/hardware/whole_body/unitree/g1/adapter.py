@@ -53,6 +53,7 @@ from dimos.hardware.whole_body.spec import (
 
 if TYPE_CHECKING:
     from dimos.hardware.whole_body.registry import WholeBodyAdapterRegistry
+    from dimos.msgs.geometry_msgs import PoseStamped
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,19 @@ class UnitreeG1LowLevelAdapter:
                 accelerometer=tuple(imu.accelerometer),
                 rpy=tuple(imu.rpy),
             )
+
+    def read_odom(self) -> PoseStamped | None:
+        """Real G1 odom — not yet wired.
+
+        The unitree_sdk2py LowState only carries IMU + motor data, not a
+        base-frame pose; the production pipeline computes odometry by
+        fusing IMU integration with leg kinematics in a separate node.
+        Returning None keeps the coordinator's Out[odom] silent on real
+        hardware.  Wire this up by either (a) subscribing to the DDS
+        odometry topic published by the onboard estimator if available,
+        or (b) running a small estimator inside this adapter.
+        """
+        return None
 
     # =========================================================================
     # Control

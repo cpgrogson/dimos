@@ -227,6 +227,7 @@ _g1_coordinator = (
     .transports(
         {
             ("joint_state", JointState): LCMTransport("/coordinator/joint_state", JointState),
+            ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
             ("joint_command", JointState): LCMTransport("/g1/joint_command", JointState),
             ("twist_command", Twist): LCMTransport("/g1/cmd_vel", Twist),
             ("activate", DimosBool): LCMTransport("/g1/activate", DimosBool),
