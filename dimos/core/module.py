@@ -45,8 +45,14 @@ from dimos.protocol.service.spec import BaseConfig, Configurable
 from dimos.protocol.tf.tf import LCMTF, TFSpec
 from dimos.utils import colors
 from dimos.utils.generic import classproperty
+from dimos.utils.logging_config import setup_logger
+
+logger = setup_logger()
 
 if TYPE_CHECKING:
+    from reactivex import Observable
+    from reactivex.abc import DisposableBase
+
     from dimos.core.coordination.blueprints import Blueprint
     from dimos.core.introspection.module.info import ModuleInfo
     from dimos.core.rpc_client import RPCClient
@@ -64,6 +70,38 @@ class SkillInfo:
     args_schema: str
 
 
+def _log_task_exception(task: asyncio.Task[Any]) -> None:
+    if task.cancelled():
+        return
+    try:
+        exc = task.exception()
+    except asyncio.InvalidStateError:
+        return
+    if exc is None or isinstance(exc, asyncio.CancelledError):
+        return
+    # Calling task.exception() above marks the exception as retrieved, so
+    # asyncio's GC-time logger won't fire — we must log here.
+    name = task.get_name()
+    logger.error(
+        f"Unhandled exception in async task {name!r}: {type(exc).__name__}: {exc}",
+        exc_info=exc,
+    )
+
+
+def _logging_task_factory(
+    loop: asyncio.AbstractEventLoop, coro: Any, **kwargs: Any
+) -> asyncio.Task[Any]:
+    """Default task factory for module-owned loops: every task gets a done
+    callback that logs unhandled exceptions. Without this, exceptions in
+    coroutines scheduled via bare ``asyncio.run_coroutine_threadsafe`` (where
+    the returned ``concurrent.futures.Future`` is never read) disappear
+    silently. This is independent of and complementary to ``Module.spawn``.
+    """
+    task = asyncio.Task(coro, loop=loop, **kwargs)
+    task.add_done_callback(_log_task_exception)
+    return task
+
+
 def get_loop() -> tuple[asyncio.AbstractEventLoop, threading.Thread | None]:
     try:
         running_loop = asyncio.get_running_loop()
@@ -71,6 +109,7 @@ def get_loop() -> tuple[asyncio.AbstractEventLoop, threading.Thread | None]:
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        loop.set_task_factory(_logging_task_factory)
 
         thr = threading.Thread(target=loop.run_forever, daemon=True)
         thr.start()
@@ -150,7 +189,90 @@ class ModuleBase(Configurable, CompositeResource):
 
     @rpc
     def start(self) -> None:
-        pass
+        self._auto_bind_handlers()
+
+    def _auto_bind_handlers(self) -> None:
+        """For each declared In[T] x, if `async def handle_x` exists, subscribe
+        it via process_observable so it runs on self._loop.
+
+        Called from ModuleBase.start(). Subclasses opt in by calling
+        super().start() — modules that don't are unaffected.
+        """
+        for input_name, in_stream in self.inputs.items():
+            handler = getattr(self, f"handle_{input_name}", None)
+            if handler is None:
+                continue
+            # @arpc wraps an async fn in a sync dispatcher; unwrap it so we
+            # subscribe the raw coroutine function instead of the wrapper
+            # (which would block on run_coroutine_threadsafe from the rx thread).
+            if getattr(handler, "__arpc__", False):
+                handler = handler.aio.__get__(self, type(self))
+            if not inspect.iscoroutinefunction(handler):
+                raise TypeError(
+                    f"{type(self).__name__}.handle_{input_name} must be `async def` "
+                    "(use a manual self.<input>.subscribe(...) for sync handlers)"
+                )
+            # observable() is backpressured/latest — slow handlers coalesce
+            # bursts instead of growing an unbounded queue on the loop.
+            self.process_observable(in_stream.observable(), handler)
+
+    def process_observable(
+        self,
+        observable: "Observable[Any]",
+        async_cb: Callable[[Any], Any],
+    ) -> "DisposableBase":
+        """Subscribe `async_cb` (an async function) to `observable`, dispatching
+        each emitted value onto self._loop. The subscription is registered for
+        cleanup on stop()."""
+        if not inspect.iscoroutinefunction(async_cb):
+            raise TypeError("process_observable requires an `async def` callback")
+        sub = observable.subscribe(self._make_async_dispatch(async_cb))
+        return self.register_disposable(sub)
+
+    def _make_async_dispatch(self, async_handler: Callable[[Any], Any]) -> Callable[[Any], None]:
+        """Build a sync callback that schedules `async_handler(msg)` onto self._loop."""
+
+        def on_msg(msg: Any) -> None:
+            loop = self._loop
+            if loop is None or not loop.is_running():
+                return
+            future = asyncio.run_coroutine_threadsafe(async_handler(msg), loop)
+            future.add_done_callback(self._log_async_handler_error)
+
+        return on_msg
+
+    def spawn(self, coro: Any) -> Any:
+        """
+        Schedule a coroutine on self._loop from any thread.
+
+        Use this instead of bare `asyncio.run_coroutine_threadsafe(coro,
+        self._loop)` when scheduling a long-running async task sync context like
+        start().
+
+        Unhandled exceptions are routed to the module logger instead of being
+        silently stored in the returned Future, which is the common pitfall when
+        nothing ever reads `.result()`.
+        """
+
+        loop = self._loop
+        if loop is None or not loop.is_running():
+            raise RuntimeError(f"{type(self).__name__}._loop is not running")
+        future = asyncio.run_coroutine_threadsafe(coro, loop)
+        future.add_done_callback(self._log_async_handler_error)
+        return future
+
+    def _log_async_handler_error(self, fut: Any) -> None:
+        try:
+            fut.result()
+        except (asyncio.CancelledError, RuntimeError):
+            pass  # loop stopped or task cancelled during shutdown
+        except BaseException as e:
+            # Include exception type+message in the event string so it is
+            # visible on consoles whose formatters strip exc_info/traceback.
+            logger.exception(
+                f"Unhandled error in async task on {type(self).__name__}._loop: "
+                f"{type(e).__name__}: {e}"
+            )
 
     @rpc
     def stop(self) -> None:

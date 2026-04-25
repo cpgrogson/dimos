@@ -765,8 +765,11 @@ def _connect_module_refs(
     module_coordinator: ModuleCoordinator,
     existing_modules: set[type[ModuleBase]] | None = None,
 ) -> None:
+    import inspect
+
     from dimos.core.coordination.blueprints import DisabledModuleProxy
     from dimos.core.module import is_module_type
+    from dimos.core.rpc_client import AsyncSpecProxy
     from dimos.spec.utils import is_spec
 
     mod_and_mod_ref_to_proxy = {
@@ -775,11 +778,16 @@ def _connect_module_refs(
         if is_spec(replacement) or is_module_type(replacement)
     }
 
+    # Track the consumer's declared spec for each ref so we can wrap the proxy
+    # below if the spec contains async-declared methods.
+    declared_spec: dict[tuple[type[ModuleBase], str], Any] = {}
+
     disabled_ref_proxies: dict[tuple[type[ModuleBase], str], DisabledModuleProxy] = {}
     disabled_set = set(blueprint.disabled_modules_tuple)
 
     for bp in blueprint.active_blueprints:
         for module_ref in bp.module_refs:
+            declared_spec[bp.module, module_ref.name] = module_ref.spec
             spec = mod_and_mod_ref_to_proxy.get((bp.module, module_ref.name), module_ref.spec)
 
             if is_module_type(spec):
@@ -796,9 +804,26 @@ def _connect_module_refs(
             else:
                 mod_and_mod_ref_to_proxy[bp.module, module_ref.name] = result
 
+    def _async_methods_of_spec(spec: Any) -> frozenset[str]:
+        if not is_spec(spec):
+            return frozenset()
+        names: set[str] = set()
+        for cls in spec.__mro__:
+            if cls is object:
+                continue
+            for attr_name, value in vars(cls).items():
+                if attr_name.startswith("_"):
+                    continue
+                if inspect.iscoroutinefunction(value):
+                    names.add(attr_name)
+        return frozenset(names)
+
     for (base_module, ref_name), target_module in mod_and_mod_ref_to_proxy.items():
         base_instance = module_coordinator.get_instance(base_module)
-        target_instance = module_coordinator.get_instance(target_module)  # type: ignore[arg-type]
+        target_instance: Any = module_coordinator.get_instance(target_module)  # type: ignore[arg-type]
+        async_methods = _async_methods_of_spec(declared_spec.get((base_module, ref_name)))
+        if async_methods:
+            target_instance = AsyncSpecProxy(target_instance, async_methods)
         setattr(base_instance, ref_name, target_instance)
         base_instance.set_module_ref(ref_name, target_instance)
         module_coordinator._resolved_module_refs[base_module, ref_name] = cast(
