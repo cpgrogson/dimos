@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unitree G1 GR00T whole-body-control blueprint.
+"""Unitree G1 GR00T whole-body-control blueprint — real hardware.
 
 Runs the ControlCoordinator at 500 Hz with two tasks:
 
   - ``groot_wbc``  (priority 50) claims legs + waist (15 DOF) and runs
     the GR00T balance / walk ONNX policies at 50 Hz.
   - ``servo_arms`` (priority 10) claims the 14 arm joints and holds
-    them at a configured relaxed pose.  No timeout — the task holds
-    until an external caller sends new arm targets.
+    them at the relaxed pose the policy was trained against.
 
-Velocity commands come from the dashboard's KeyboardControlPanel
-(http://localhost:7779/, WASD captured in the browser DOM) and are
-routed through ``WebsocketVisModule`` → LCM ``/g1/cmd_vel`` →
-coordinator ``twist_command`` → ``GrootWBCTask.set_velocity_command``.
+Real-hardware safety profile: the blueprint comes up unarmed and in
+dry-run.  The operator opens the dashboard at http://localhost:7779/,
+verifies the computed commands look sane, then clicks Activate to
+ramp from the current pose to the bent-knee default over 10 s before
+handing torque control to the policy.
 
 Architecture:
     dashboard WASD ──▶ WebsocketVisModule ──▶ LCM /g1/cmd_vel
@@ -34,234 +34,104 @@ Architecture:
                                                        │
     ControlCoordinator ──joint_state──▶ LCM /coordinator/joint_state
                        ◀─joint_command── LCM /g1/joint_command
-                              │
-                    WholeBodyAdapter:
-                      --simulation    → SimMujocoG1WholeBodyAdapter
-                                        (MujocoConnection subprocess,
-                                         low-level passthrough)
-                      real hardware   → UnitreeG1LowLevelAdapter (DDS)
+
+Sim is a separate blueprint (``unitree-g1-groot-wbc-sim``) so each
+file is statically clear about what it composes — no module-level
+config branching.
 
 Usage:
-    dimos --simulation run unitree-g1-groot-wbc          # MuJoCo viewer, browser opens auto
-    ROBOT_INTERFACE=en7 dimos run unitree-g1-groot-wbc   # real robot (set CYCLONEDDS_HOME first)
+    ROBOT_INTERFACE=enp86s0 dimos run unitree-g1-groot-wbc
 
 Environment:
-    ROBOT_INTERFACE   DDS network interface for real robot (default "enp86s0").
-                      Ignored under --simulation.
-    DIMOS_DDS_DOMAIN  DDS domain id for real robot (default 0). Ignored
-                      under --simulation.
-    CYCLONEDDS_HOME   Required at runtime on real hw — must point at the
-                      cyclonedds C install (e.g. ~/cyclonedds/install).
-                      Ignored under --simulation.
-    GROOT_MODEL_DIR   Directory containing balance.onnx + walk.onnx
-                      (default "data/groot").
+    ROBOT_INTERFACE   DDS network interface for the real robot
+                      (default ``"enp86s0"``).
+    DIMOS_DDS_DOMAIN  DDS domain id (default ``0``).
+    CYCLONEDDS_HOME   Required at runtime — must point at the
+                      cyclonedds C install (e.g. ``~/cyclonedds/install``).
+    GROOT_MODEL_DIR   Directory containing ``balance.onnx`` +
+                      ``walk.onnx`` (default: pulled via
+                      ``get_data("groot")``).
 """
 
 from __future__ import annotations
 
 import os
 
-from dimos.control.components import (
-    HardwareComponent,
-    HardwareType,
-    make_humanoid_joints,
-)
+from dimos.control.components import HardwareComponent, HardwareType
 from dimos.control.coordinator import ControlCoordinator, TaskConfig
 from dimos.core.coordination.blueprints import autoconnect
-from dimos.core.global_config import global_config
 from dimos.core.transport import LCMTransport
 from dimos.msgs.geometry_msgs.PoseStamped import PoseStamped
 from dimos.msgs.geometry_msgs.Twist import Twist
-from dimos.msgs.sensor_msgs.CameraInfo import CameraInfo
-from dimos.msgs.sensor_msgs.Image import Image
 from dimos.msgs.sensor_msgs.JointState import JointState
 from dimos.msgs.std_msgs.Bool import Bool as DimosBool
+from dimos.robot.unitree.g1.blueprints.basic._groot_wbc_common import (
+    ARM_DEFAULT_POSE,
+    G1_GROOT_KD,
+    G1_GROOT_KP,
+    g1_arms,
+    g1_joints,
+    g1_legs_waist,
+)
 from dimos.utils.data import get_data
-from dimos.utils.logging_config import setup_logger
-from dimos.visualization.viser import splat_camera, viser_render
-
-logger = setup_logger()
 from dimos.web.websocket_vis.websocket_vis_module import WebsocketVisModule
 
-_g1_joints = make_humanoid_joints("g1")
-_g1_legs_waist = _g1_joints[:15]  # indices 0..14 — legs (12) + waist (3)
-_g1_arms = _g1_joints[15:]  # indices 15..28 — left arm (7) + right arm (7)
-
-# Per-joint PD gains, 29 entries in DDS motor order.  Lifted verbatim
-# from g1-control-api/configs/g1_groot_wbc.yaml, which itself copies
-# GR00T-WBC's g1_29dof_gear_wbc.yaml reference config.  These gains
-# were the ones the balance / walk ONNX policies were trained against
-# — diverging from them on real hardware risks instability.
-_G1_GROOT_KP = [
-    150.0,
-    150.0,
-    150.0,
-    200.0,
-    40.0,
-    40.0,  # left leg
-    150.0,
-    150.0,
-    150.0,
-    200.0,
-    40.0,
-    40.0,  # right leg
-    250.0,
-    250.0,
-    250.0,  # waist
-    100.0,
-    100.0,
-    40.0,
-    40.0,
-    20.0,
-    20.0,
-    20.0,  # left arm
-    100.0,
-    100.0,
-    40.0,
-    40.0,
-    20.0,
-    20.0,
-    20.0,  # right arm
-]
-_G1_GROOT_KD = [
-    2.0,
-    2.0,
-    2.0,
-    4.0,
-    2.0,
-    2.0,  # left leg
-    2.0,
-    2.0,
-    2.0,
-    4.0,
-    2.0,
-    2.0,  # right leg
-    5.0,
-    5.0,
-    5.0,  # waist
-    5.0,
-    5.0,
-    2.0,
-    2.0,
-    2.0,
-    2.0,
-    2.0,  # left arm
-    5.0,
-    5.0,
-    2.0,
-    2.0,
-    2.0,
-    2.0,
-    2.0,  # right arm
-]
-
-# Relaxed arms-down pose.  Values taken from
-# g1_control/backends/groot_wbc_backend.py:DEFAULT_29[15:] (all zeros),
-# which is the zero-offset pose the policy was trained against.
-# Operators can override at runtime by publishing joint targets on the
-# arms via the joint_command transport.
-_ARM_DEFAULT_POSE = [
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,  # left arm (7 DOF)
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,
-    0.0,  # right arm (7 DOF)
-]
-
-_adapter_type = "sim_mujoco_g1" if global_config.simulation else "unitree_g1"
-_address = None if global_config.simulation else os.getenv("ROBOT_INTERFACE", "enp86s0")
-
-# Arming defaults: sim auto-arms (the MuJoCo subprocess holds the MJCF
-# pose until first command, no ramp needed); real hardware comes up
-# unarmed + dry-run so the operator can see computed commands before
-# committing motor torques, then hit Activate in the dashboard for a
-# 10 s ramp to the bent-knee default (mirrors g1-control-api).
-_AUTO_ARM = global_config.simulation
-_AUTO_DRY_RUN = not global_config.simulation
-_DEFAULT_RAMP_SECONDS = 0.0 if global_config.simulation else 10.0
-
-_g1_coordinator = (
-    ControlCoordinator.blueprint(
-        tick_rate=500.0,
-        publish_joint_state=True,
-        joint_state_frame_id="coordinator",
-        hardware=[
-            HardwareComponent(
-                hardware_id="g1",
-                hardware_type=HardwareType.WHOLE_BODY,
-                joints=_g1_joints,
-                adapter_type=_adapter_type,
-                address=_address,
-                domain_id=int(os.getenv("DIMOS_DDS_DOMAIN", "0")),
-                auto_enable=True,
-                kp=_G1_GROOT_KP,
-                kd=_G1_GROOT_KD,
-            ),
-        ],
-        tasks=[
-            TaskConfig(
-                name="groot_wbc",
-                type="groot_wbc",
-                joint_names=_g1_legs_waist,
-                priority=50,
-                model_path=os.getenv("GROOT_MODEL_DIR", str(get_data("groot"))),
-                hardware_id="g1",
-                auto_start=True,
-                auto_arm=_AUTO_ARM,
-                auto_dry_run=_AUTO_DRY_RUN,
-                default_ramp_seconds=_DEFAULT_RAMP_SECONDS,
-            ),
-            TaskConfig(
-                name="servo_arms",
-                type="servo",
-                joint_names=_g1_arms,
-                priority=10,
-                default_positions=_ARM_DEFAULT_POSE,
-                auto_start=True,
-            ),
-        ],
-    )
-    .transports(
-        {
-            ("joint_state", JointState): LCMTransport("/coordinator/joint_state", JointState),
-            ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
-            ("joint_command", JointState): LCMTransport("/g1/joint_command", JointState),
-            ("twist_command", Twist): LCMTransport("/g1/cmd_vel", Twist),
-            ("activate", DimosBool): LCMTransport("/g1/activate", DimosBool),
-            ("dry_run", DimosBool): LCMTransport("/g1/dry_run", DimosBool),
-        }
-    )
-    .global_config(
-        # Picked up by MujocoConnection → mujoco_process.py when the blueprint
-        # is run with --simulation.  robot_model selects which MJCF the sim
-        # child loads; mujoco_room wraps it in a flat floor (vs the default
-        # "office1" room used by the perceptive G1 sim blueprint).
-        robot_model="unitree_g1",
-        mujoco_room="empty",
-    )
+_g1_coordinator = ControlCoordinator.blueprint(
+    tick_rate=500.0,
+    publish_joint_state=True,
+    joint_state_frame_id="coordinator",
+    hardware=[
+        HardwareComponent(
+            hardware_id="g1",
+            hardware_type=HardwareType.WHOLE_BODY,
+            joints=g1_joints,
+            adapter_type="unitree_g1",
+            address=os.getenv("ROBOT_INTERFACE", "enp86s0"),
+            domain_id=int(os.getenv("DIMOS_DDS_DOMAIN", "0")),
+            auto_enable=True,
+            kp=G1_GROOT_KP,
+            kd=G1_GROOT_KD,
+        ),
+    ],
+    tasks=[
+        TaskConfig(
+            name="groot_wbc",
+            type="groot_wbc",
+            joint_names=g1_legs_waist,
+            priority=50,
+            model_path=os.getenv("GROOT_MODEL_DIR", str(get_data("groot"))),
+            hardware_id="g1",
+            auto_start=True,
+            # Real-hw safety: come up unarmed + dry-run.  Operator
+            # arms via the dashboard Activate button after sanity
+            # checks; activation ramps over 10 s.
+            auto_arm=False,
+            auto_dry_run=True,
+            default_ramp_seconds=10.0,
+        ),
+        TaskConfig(
+            name="servo_arms",
+            type="servo",
+            joint_names=g1_arms,
+            priority=10,
+            default_positions=ARM_DEFAULT_POSE,
+            auto_start=True,
+        ),
+    ],
+).transports(
+    {
+        ("joint_state", JointState): LCMTransport("/coordinator/joint_state", JointState),
+        ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
+        ("joint_command", JointState): LCMTransport("/g1/joint_command", JointState),
+        ("twist_command", Twist): LCMTransport("/g1/cmd_vel", Twist),
+        ("activate", DimosBool): LCMTransport("/g1/activate", DimosBool),
+        ("dry_run", DimosBool): LCMTransport("/g1/dry_run", DimosBool),
+    }
 )
 
-
-# WASD teleop via the web dashboard (http://localhost:7779/) served by
-# WebsocketVisModule.  The bundled React command-center at
-# ``data/command_center.html`` includes a KeyboardControlPanel that
-# captures W/S/A/D on keydown/keyup and emits ``move_command`` events
-# which the module re-publishes on its ``cmd_vel`` port.  We route that
-# over LCM to the coordinator's ``twist_command`` port on /g1/cmd_vel.
-#
-# This replaces the pygame-based ``keyboard_teleop`` module because
-# pygame's pygame.display.set_mode() calls NSWindow on macOS, and Cocoa
-# rejects NSWindow creation from non-main threads — which is where
-# dimos runs module code.  A browser tab has no such constraint.
+# Operator dashboard (WASD, Activate, dry-run toggle) at
+# http://localhost:7779/.  WebsocketVisModule re-publishes the
+# dashboard's events onto the coordinator's LCM ports.
 _g1_ws_vis = WebsocketVisModule.blueprint().transports(
     {
         ("cmd_vel", Twist): LCMTransport("/g1/cmd_vel", Twist),
@@ -270,57 +140,6 @@ _g1_ws_vis = WebsocketVisModule.blueprint().transports(
     },
 )
 
-# Viser browser viewer + splat-rendered head camera.  Sim-only — there
-# is no /odom on real hardware in this blueprint, and the splat is a
-# static capture, not the live world the robot is in.
-#
-# Splat + alignment YAML are pulled via the standard Git-LFS data flow:
-# ``get_data("dimos_office")`` triggers a one-time pull of
-# ``data/.lfs/dimos_office.tar.gz`` and decompresses it to
-# ``data/dimos_office/``.  YAML schema: ``SplatAlignment`` in
-# ``dimos/visualization/viser/splat.py``.  If the pull fails (no
-# Git-LFS, offline, etc.) the viser modules are skipped and the rest
-# of the blueprint runs unchanged.
-_viser_modules: tuple = ()
-if global_config.simulation:
-    try:
-        _splat_dir = get_data("dimos_office")
-        _splat_path = _splat_dir / "dimos_office.ply"
-        _alignment_yaml = _splat_dir / "dimos_office.yaml"
-    except Exception as e:
-        logger.warning(f"Splat asset unavailable: {e}; viser viewer + splat camera disabled")
-        _splat_path = None
-    if _splat_path is not None and _splat_path.exists():
-        _mjcf_path = "data/mujoco_sim/g1_gear_wbc.xml"
-        _g1_viser = viser_render(
-            splat_path=str(_splat_path),
-            mjcf_path=_mjcf_path,
-            alignment_yaml=str(_alignment_yaml) if _alignment_yaml.exists() else None,
-            port=8082,
-        ).transports(
-            {
-                ("joint_state", JointState): LCMTransport("/coordinator/joint_state", JointState),
-                ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
-            },
-        )
-        # Splat-rendered head camera images.  Same splat + alignment as
-        # the viser viewer; backend is auto-selected (gsplat on Linux+CUDA,
-        # stub elsewhere).  Publishes /splat/color_image + /splat/camera_info.
-        _g1_splat_cam = splat_camera(
-            splat_path=str(_splat_path),
-            mjcf_path=_mjcf_path,
-            alignment_yaml=str(_alignment_yaml) if _alignment_yaml.exists() else None,
-            render_hz=10.0,
-        ).transports(
-            {
-                ("joint_state", JointState): LCMTransport("/coordinator/joint_state", JointState),
-                ("odom", PoseStamped): LCMTransport("/odom", PoseStamped),
-                ("color_image", Image): LCMTransport("/splat/color_image", Image),
-                ("camera_info", CameraInfo): LCMTransport("/splat/camera_info", CameraInfo),
-            },
-        )
-        _viser_modules = (_g1_viser, _g1_splat_cam)
-
-unitree_g1_groot_wbc = autoconnect(_g1_coordinator, _g1_ws_vis, *_viser_modules)
+unitree_g1_groot_wbc = autoconnect(_g1_coordinator, _g1_ws_vis)
 
 __all__ = ["unitree_g1_groot_wbc"]
