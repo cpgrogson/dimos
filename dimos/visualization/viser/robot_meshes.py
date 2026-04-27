@@ -98,6 +98,12 @@ def load_robot_meshes(
             continue
         if int(model.geom_group[gid]) not in visual_groups:
             continue
+        # Skip geoms attached to the world body (id 0).  These are
+        # static scene elements (e.g. the office collision mesh in
+        # g1_gear_wbc_with_office.xml) — viser doesn't need to render
+        # them because the splat already covers the visual environment.
+        if int(model.geom_bodyid[gid]) == 0:
+            continue
         mesh_id = int(model.geom_dataid[gid])
         if mesh_id < 0:
             continue

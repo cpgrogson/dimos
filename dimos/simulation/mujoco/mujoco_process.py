@@ -100,10 +100,22 @@ def _load_g1_gear_wbc_lowlevel() -> tuple[mujoco.MjModel, mujoco.MjData]:
     when bundled); ``get_assets()`` already injects menagerie's G1 mesh
     bytes under those names.
     """
-    xml_path = get_data("mujoco_sim") / "g1_gear_wbc.xml"
+    # If a captured-scene collision mesh is sitting next to the splat
+    # bundle (e.g. data/dimos_office/collision.obj), wrap the bare robot
+    # MJCF in g1_gear_wbc_with_office.xml so mj_ray sees the office
+    # geometry — the existing flat floor handles physics, the office
+    # mesh is contype=conaffinity=0 (raycast-only, no collision blob).
+    mj_dir = get_data("mujoco_sim")
+    assets = get_assets()
+    office_obj = get_data("dimos_office") / "collision.obj"
+    if office_obj.exists():
+        xml_path = mj_dir / "g1_gear_wbc_with_office.xml"
+        assets["collision.obj"] = office_obj.read_bytes()
+    else:
+        xml_path = mj_dir / "g1_gear_wbc.xml"
     with open(xml_path) as f:
         xml_str = f.read()
-    model = mujoco.MjModel.from_xml_string(xml_str, assets=get_assets())
+    model = mujoco.MjModel.from_xml_string(xml_str, assets=assets)
     data = mujoco.MjData(model)
     return model, data
 
